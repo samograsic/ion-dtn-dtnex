@@ -22,4 +22,9 @@ The scrip does not require any configuration. It can be simply started by runnin
 | str | version | Used version of DTNEX message (currently only 1)|
 | str | type | Type of message, “li” used for information of links/connections |
 | str | msgOrigin | Origin of DTNEX message |
-
+| str | msgSource | Sender of DTNEX message |
+| str | nodeA | Link/Connection information about nodeA |
+| str | nodeB |  Link/Connection information about nodeA |
+| str | timestamp | *Timestamp of DTNEX message* |
+| str | hopcount | *Hopcount of DTNEX message* |
+| str | timespan | *Timespan of Link* |

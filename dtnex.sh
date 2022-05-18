@@ -3,7 +3,7 @@
 # Network Information Exchange Mechanism for DTN
 # Author: Samo Grasic, samo@grasic.net
 
-echo "Starting a DTNEX script, author: Samo Grasic (samo@grasic.net), v0.1 ..."
+echo "Starting a DTNEX script, author: Samo Grasic (samo@grasic.net), v0.2 ..."
 
 serviceNr=12160 #Do not change
 updateInterval=60 #Update time in seconds
@@ -57,21 +57,7 @@ bpadminOutput1=$(echo "a endpoint ipn:$nodeId.$serviceNr q"|bpadmin)
 
 #Getting locally registered  endpoints
 bpadminOutput=$(echo "l endpoint"|bpadmin)
- 
 
-echo "*----------------------------------------------------------------------*"
-echo "Getting a plan list (neighbour  nodes)..."
-plans=($(echo "l plan"|ipnadmin|sed 's@^[^0-9]*\([0-9]\+\).*@\1@'))
-unset plans[-1] # removes the last 1 elements
-unset plans[-1] # removes the last 1 elements
-unset plans[-1] # removes the last 1 elements
-
-echo "Number of configured plans:${#plans[@]}"
-echo "List of configured plans:"
-
-for i in "${plans[@]}"; do
-  echo ">$i"
-done
 
 bpsinkCommand="bpsink ipn:$nodeId.$serviceNr>capturePipe&"
 echo "Starting bpsink with:$bpsinkCommand"
@@ -86,7 +72,21 @@ trap "kill $pid 2> /dev/null" EXIT
 # While bpsink is running...
 while kill -0 $pid 2> /dev/null; do
     	# Do stuff
+	echo
     	echo "Main loop..."
+	echo "*----------------------------------------------------------------------*"
+	#echo "Getting a plan list (neighbour  nodes)..."
+	plans=($(echo "l plan"|ipnadmin|sed 's@^[^0-9]*\([0-9]\+\).*@\1@'))
+	unset plans[-1] # removes the last 1 elements
+	unset plans[-1] # removes the last 1 elements
+	unset plans[-1] # removes the last 1 elements
+	#echo "Number of configured plans:${#plans[@]}"
+	echo "$(tput setaf 5)List of configured plans:"
+	for i in "${plans[@]}"; do
+  	echo ">$i"
+	done
+
+
 #        echo "Exchanging messages with configured plans:"
 
 	for i in "${plans[@]}"; do
@@ -170,7 +170,7 @@ while kill -0 $pid 2> /dev/null; do
 	done
     	echo "$(tput setaf 7)Sleep for $updateInterval sec..."
 	echo
-    	sleep $updateInterval
+	sleep $updateInterval
 
 done
 

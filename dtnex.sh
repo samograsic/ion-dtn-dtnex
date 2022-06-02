@@ -3,17 +3,17 @@
 # Network Information Exchange Mechanism for DTN
 # Author: Samo Grasic, samo@grasic.net
 
+updateInterval=60 #Update time in seconds
+
+
+
+
 echo "Starting a DTNEX script, author: Samo Grasic (samo@grasic.net), v0.3 ..."
 
 serviceNr=12160 #Do not change
-updateInterval=10 #Update time in seconds
 msgidentifier="xmsg"
 
 capturePipe=receivedmsgpipe
-
-#if [[ ! -p $capturePipe ]]; then
-#    mkfifo $capturePipe
-#fi
 
 rm $capturePipe
 touch $capturePipe

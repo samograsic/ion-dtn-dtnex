@@ -3,19 +3,21 @@
 # Network Information Exchange Mechanism for DTN
 # Author: Samo Grasic, samo@grasic.net
 
-echo "Starting a DTNEX script, author: Samo Grasic (samo@grasic.net), v0.2 ..."
+echo "Starting a DTNEX script, author: Samo Grasic (samo@grasic.net), v0.3 ..."
 
 serviceNr=12160 #Do not change
-updateInterval=60 #Update time in seconds
+updateInterval=10 #Update time in seconds
 msgidentifier="xmsg"
 
-capturePipe=capture
+capturePipe=receivedmsgpipe
 
-if [[ ! -p $capturePipe ]]; then
-    mkfifo $capturePipe
-fi
+#if [[ ! -p $capturePipe ]]; then
+#    mkfifo $capturePipe
+#fi
 
-chmod 644 capturePipe
+rm $capturePipe
+touch $capturePipe
+chmod 644 $capturePipe
 
 
 ionOutput=$(echo "v"|bpadmin)
@@ -59,9 +61,9 @@ bpadminOutput1=$(echo "a endpoint ipn:$nodeId.$serviceNr q"|bpadmin)
 bpadminOutput=$(echo "l endpoint"|bpadmin)
 
 
-bpsinkCommand="bpsink ipn:$nodeId.$serviceNr>capturePipe&"
+bpsinkCommand="bpsink ipn:$nodeId.$serviceNr>$capturePipe&"
 echo "Starting bpsink with:$bpsinkCommand"
-bpsink ipn:$nodeId.$serviceNr>capturePipe&
+bpsink ipn:$nodeId.$serviceNr>$capturePipe&
 pid=$!
 
 
@@ -100,7 +102,11 @@ while kill -0 $pid 2> /dev/null; do
 		eval $bpsourceCommand
 	fi
 	done
-	cat capturePipe| while read -r line
+
+	#Processing received network messages
+
+
+	cat $capturePipe|while read -r line
 	do
   	#echo "$(tput setaf 5)Received line:$line"
 	if grep -q $msgidentifier <<<$line; then
@@ -161,7 +167,7 @@ while kill -0 $pid 2> /dev/null; do
 	done 
 
 	#Clear the capture pipe
-    	>capturePipe
+    	>$capturePipe
  	echo "*----------------------------------------------------------------------*"
  	echo "$(tput setaf 6)Updated contact List:"
  	contlist=$(echo "l contact"|ionadmin|grep -o -P '(?<=from).*?(?=is)')

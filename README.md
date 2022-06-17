@@ -8,12 +8,17 @@ DTNEX script helps to distribute information about individual ION-DTN nodes conn
 * ION-DTN (4.1.0 or higher) with original bpsource and bpsink applications.
 * ION Configuration of neighbor nodes (plans and convergence layers)
 * Registered at least one ipn endpoint (used to retrive node ID)
+* Optional: Graphviz graph visualization software (https://graphviz.org/)
 
 ## How it works:
 The DTNEX script registers additional ipn endpoint on service number 12160. This service number is used to receive network information messages from other nodes using the bpsink service running in a background. The main loop of the DTNEX script periodically (set up using updateInterval value) sends up information about configured ION plan (directly connected DTN nodes – neighbor nodes) to all the node in the plan. After, the script it parses received network information messages from others nodes and updates local ION Contact Graph accordingly. At the same time, received network messages gets forwarded further to other nodes.
 
 ## How to use it
 The scrip does not require any configuration. It can be simply started by running ./dtnex.sh command. Note: In order to keep the information about the DTN network topology updated, the script needs to be running.
+
+## Contact Graph Visualization
+After version v0.4 the script can also visualize ION's contact graph. Install the Graphviz software package and set a "createGraph" option to true.
+![GraphViz](https://raw.githubusercontent.com/samograsic/ion-dtn-dtnex/main/dtnGraphExample.png)
 
 ## Format of DTNEX Network Information Messages:
 | Type | Name | Description |

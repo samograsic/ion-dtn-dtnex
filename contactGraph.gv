@@ -1,0 +1,14 @@
+digraph G { layout=neato; overlap=false;
+"ipn:80" -> "ipn:88"
+"ipn:81" -> "ipn:88"
+"ipn:88" -> "ipn:80"
+"ipn:88" -> "ipn:81"
+"ipn:88" -> "ipn:88"
+"ipn:88" -> "ipn:88"
+"ipn:88" -> "ipn:100"
+"ipn:88" -> "ipn:177"
+"ipn:88" -> "ipn:180"
+"ipn:100" -> "ipn:88"
+"ipn:177" -> "ipn:88"
+"ipn:180" -> "ipn:88"
+labelloc="t"; label="IPNSIG Network Graph, Updated:2022-06-17_00-53-30"}

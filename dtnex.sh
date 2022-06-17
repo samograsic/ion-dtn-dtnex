@@ -1,14 +1,18 @@
-#/bin/bash
+#!/bin/bash
 # DTNEX scrip
-# Network Information Exchange Mechanism for DTN
+# Network Information Exchange Mechanism for populating ION-DTN Contact Graph
 # Author: Samo Grasic, samo@grasic.net
 
-updateInterval=60 #Update time in seconds
+#Update time in seconds
+updateInterval=60
+
+#Use this definition if you want to visualize the contact graph plan (Note:graphviz tool needs to be installed on the system)
+createGraph=true
+graphFile=/home/pi/.node-red/lib/ui-media/lib/DTN/dtnGraph.png
 
 
 
-
-echo "Starting a DTNEX script, author: Samo Grasic (samo@grasic.net), v0.3 ..."
+echo "Starting a DTNEX script, author: Samo Grasic (samo@grasic.net), v0.4 ..."
 
 serviceNr=12160 #Do not change
 msgidentifier="xmsg"
@@ -27,7 +31,7 @@ echo "Using ION Version:$(tput setaf 3)${versionline[1]}$(tput setaf 7)"
 #Getting locally registered  endpoints
 bpadminOutput=$(echo "l endpoint"|bpadmin)
 
-echo "*----------------------------------------------------------------------*"
+#echo "*----------------------------------------------------------------------*"
 #echo "Raw List of ENDPoints:"
 #echo $bpadminOutput
 #echo ""
@@ -76,7 +80,10 @@ while kill -0 $pid 2> /dev/null; do
     	# Do stuff
 	echo
     	echo "Main loop..."
-	echo "*----------------------------------------------------------------------*"
+	#echo "*----------------------------------------------------------------------*"
+	TIMESTAMP=`date +%Y-%m-%d_%H-%M-%S`
+	echo "TimeStamp:$TIMESTAMP"
+
 	#echo "Getting a plan list (neighbour  nodes)..."
 	plans=($(echo "l plan"|ipnadmin|sed 's@^[^0-9]*\([0-9]\+\).*@\1@'))
 	unset plans[-1] # removes the last 1 elements
@@ -168,13 +175,40 @@ while kill -0 $pid 2> /dev/null; do
 
 	#Clear the capture pipe
     	>$capturePipe
- 	echo "*----------------------------------------------------------------------*"
- 	echo "$(tput setaf 6)Updated contact List:"
+
+	if [ -n "$createGraph" ]; then
+  		echo "Generating new graph visualization..."
+		>contactGraph.gv
+		echo "digraph G { layout=neato; overlap=false;">>contactGraph.gv
+	fi
+
+
+ 	#echo "*----------------------------------------------------------------------*"
+ 	echo "$(tput setaf 6)Updated Contact Graph List:"
  	contlist=$(echo "l contact"|ionadmin|grep -o -P '(?<=from).*?(?=is)')
  	for li in "${contlist[@]}"; do
-    	echo "$li"
+	    	echo "$li"
+
+  		if [ -n "$createGraph" ]; then
+
+		readarray -t pairline <<<"$li"
+		for pline in "${pairline[@]}"; do
+			 #echo "Parsed pair:$pline"
+		         pair=($pline)
+			 echo "\"ipn:${pair[1]}\" -> \"ipn:${pair[4]}\"">>contactGraph.gv
+		done
+		fi             
+
+
+
 	done
-    	echo "$(tput setaf 7)Sleep for $updateInterval sec..."
+	
+        if [ -n "$createGraph" ]; then
+	echo "labelloc=\"t\"; label=\"IPNSIG Network Graph, Updated:$TIMESTAMP\"}">>contactGraph.gv
+	dot -Tpng contactGraph.gv -o $graphFile
+	fi    	
+
+	echo "$(tput setaf 7)Sleep for $updateInterval sec..."
 	echo
 	sleep $updateInterval
 

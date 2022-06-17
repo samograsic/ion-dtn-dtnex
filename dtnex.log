@@ -1,0 +1,323 @@
+Starting a DTNEX script, author: Samo Grasic (samo@grasic.net), v0.3 ...
+Using ION Version:[33mION-OPEN-SOURCE-4.1.0[37m
+*----------------------------------------------------------------------*
+Number of registered  EIDs:10
+List of local EIDs:
+>ipn:88.0
+>ipn:88.1
+>ipn:88.2
+>ipn:88.3
+>ipn:88.4
+>ipn:88.5
+>ipn:88.6
+>ipn:88.64
+>ipn:88.65
+>ipn:88.12160
+Extracting the node EID number from the first registered  endpoint... ipn:88.0
+ipnarray:88.0
+[33mParsed Node ID:88[37m
+Starting bpsink with:bpsink ipn:88.12160>receivedmsgpipe&
+
+Main loop...
+*----------------------------------------------------------------------*
+TimeStamp:2022-06-16_23-51-50
+[35mList of configured plans:
+>88
+>81
+>177
+>80
+>100
+>22
+>180
+Skipping local loopback plan
+[33mMessaging own plan to node [Origin:88, From:88, To:81, About:88][37m
+[33mMessaging own plan to node [Origin:88, From:88, To:177, About:88][37m
+[33mMessaging own plan to node [Origin:88, From:88, To:80, About:88][37m
+[33mMessaging own plan to node [Origin:88, From:88, To:100, About:88][37m
+[33mMessaging own plan to node [Origin:88, From:88, To:22, About:88][37m
+[33mMessaging own plan to node [Origin:88, From:88, To:180, About:88][37m
+Generating new graph visualization...
+*----------------------------------------------------------------------*
+[36mUpdated Contact Graph List:
+ node 22 to node 88 
+ node 80 to node 88 
+ node 81 to node 88 
+ node 88 to node 22 
+ node 88 to node 80 
+ node 88 to node 81 
+ node 88 to node 88 
+ node 88 to node 88 
+ node 88 to node 100 
+ node 88 to node 177 
+ node 88 to node 180 
+ node 100 to node 88 
+ node 177 to node 88 
+ node 180 to node 88 
+[37mSleep for 10 sec...
+
+
+Main loop...
+*----------------------------------------------------------------------*
+TimeStamp:2022-06-16_23-52-01
+[35mList of configured plans:
+>88
+>81
+>177
+>80
+>100
+>22
+>180
+Skipping local loopback plan
+[33mMessaging own plan to node [Origin:88, From:88, To:81, About:88][37m
+[33mMessaging own plan to node [Origin:88, From:88, To:177, About:88][37m
+[33mMessaging own plan to node [Origin:88, From:88, To:80, About:88][37m
+[33mMessaging own plan to node [Origin:88, From:88, To:100, About:88][37m
+[33mMessaging own plan to node [Origin:88, From:88, To:22, About:88][37m
+[33mMessaging own plan to node [Origin:88, From:88, To:180, About:88][37m
+Generating new graph visualization...
+*----------------------------------------------------------------------*
+[36mUpdated Contact Graph List:
+ node 22 to node 88 
+ node 80 to node 88 
+ node 81 to node 88 
+ node 88 to node 22 
+ node 88 to node 80 
+ node 88 to node 81 
+ node 88 to node 88 
+ node 88 to node 88 
+ node 88 to node 100 
+ node 88 to node 177 
+ node 88 to node 180 
+ node 100 to node 88 
+ node 177 to node 88 
+ node 180 to node 88 
+[37mSleep for 10 sec...
+
+
+Main loop...
+*----------------------------------------------------------------------*
+TimeStamp:2022-06-16_23-52-12
+[35mList of configured plans:
+>88
+>81
+>177
+>80
+>100
+>22
+>180
+Skipping local loopback plan
+[33mMessaging own plan to node [Origin:88, From:88, To:81, About:88][37m
+[33mMessaging own plan to node [Origin:88, From:88, To:177, About:88][37m
+[33mMessaging own plan to node [Origin:88, From:88, To:80, About:88][37m
+[33mMessaging own plan to node [Origin:88, From:88, To:100, About:88][37m
+[33mMessaging own plan to node [Origin:88, From:88, To:22, About:88][37m
+[33mMessaging own plan to node [Origin:88, From:88, To:180, About:88][37m
+Generating new graph visualization...
+*----------------------------------------------------------------------*
+[36mUpdated Contact Graph List:
+ node 22 to node 88 
+ node 80 to node 88 
+ node 81 to node 88 
+ node 88 to node 22 
+ node 88 to node 80 
+ node 88 to node 81 
+ node 88 to node 88 
+ node 88 to node 88 
+ node 88 to node 100 
+ node 88 to node 177 
+ node 88 to node 180 
+ node 100 to node 88 
+ node 177 to node 88 
+ node 180 to node 88 
+[37mSleep for 10 sec...
+
+
+Main loop...
+*----------------------------------------------------------------------*
+TimeStamp:2022-06-16_23-52-23
+[35mList of configured plans:
+>88
+>81
+>177
+>80
+>100
+>22
+>180
+Skipping local loopback plan
+[33mMessaging own plan to node [Origin:88, From:88, To:81, About:88][37m
+[33mMessaging own plan to node [Origin:88, From:88, To:177, About:88][37m
+[33mMessaging own plan to node [Origin:88, From:88, To:80, About:88][37m
+[33mMessaging own plan to node [Origin:88, From:88, To:100, About:88][37m
+[33mMessaging own plan to node [Origin:88, From:88, To:22, About:88][37m
+[33mMessaging own plan to node [Origin:88, From:88, To:180, About:88][37m
+Generating new graph visualization...
+*----------------------------------------------------------------------*
+[36mUpdated Contact Graph List:
+ node 22 to node 88 
+ node 80 to node 88 
+ node 81 to node 88 
+ node 88 to node 22 
+ node 88 to node 80 
+ node 88 to node 81 
+ node 88 to node 88 
+ node 88 to node 88 
+ node 88 to node 100 
+ node 88 to node 177 
+ node 88 to node 180 
+ node 100 to node 88 
+ node 177 to node 88 
+ node 180 to node 88 
+[37mSleep for 10 sec...
+
+
+Main loop...
+*----------------------------------------------------------------------*
+TimeStamp:2022-06-16_23-52-33
+[35mList of configured plans:
+>88
+>81
+>177
+>80
+>100
+>22
+>180
+Skipping local loopback plan
+[33mMessaging own plan to node [Origin:88, From:88, To:81, About:88][37m
+[33mMessaging own plan to node [Origin:88, From:88, To:177, About:88][37m
+[33mMessaging own plan to node [Origin:88, From:88, To:80, About:88][37m
+[33mMessaging own plan to node [Origin:88, From:88, To:100, About:88][37m
+[33mMessaging own plan to node [Origin:88, From:88, To:22, About:88][37m
+[33mMessaging own plan to node [Origin:88, From:88, To:180, About:88][37m
+Generating new graph visualization...
+*----------------------------------------------------------------------*
+[36mUpdated Contact Graph List:
+ node 22 to node 88 
+ node 80 to node 88 
+ node 81 to node 88 
+ node 88 to node 22 
+ node 88 to node 80 
+ node 88 to node 81 
+ node 88 to node 88 
+ node 88 to node 88 
+ node 88 to node 100 
+ node 88 to node 177 
+ node 88 to node 180 
+ node 100 to node 88 
+ node 177 to node 88 
+ node 180 to node 88 
+[37mSleep for 10 sec...
+
+
+Main loop...
+*----------------------------------------------------------------------*
+TimeStamp:2022-06-16_23-52-44
+[35mList of configured plans:
+>88
+>81
+>177
+>80
+>100
+>22
+>180
+Skipping local loopback plan
+[33mMessaging own plan to node [Origin:88, From:88, To:81, About:88][37m
+[33mMessaging own plan to node [Origin:88, From:88, To:177, About:88][37m
+[33mMessaging own plan to node [Origin:88, From:88, To:80, About:88][37m
+[33mMessaging own plan to node [Origin:88, From:88, To:100, About:88][37m
+[33mMessaging own plan to node [Origin:88, From:88, To:22, About:88][37m
+[33mMessaging own plan to node [Origin:88, From:88, To:180, About:88][37m
+Generating new graph visualization...
+*----------------------------------------------------------------------*
+[36mUpdated Contact Graph List:
+ node 22 to node 88 
+ node 80 to node 88 
+ node 81 to node 88 
+ node 88 to node 22 
+ node 88 to node 80 
+ node 88 to node 81 
+ node 88 to node 88 
+ node 88 to node 88 
+ node 88 to node 100 
+ node 88 to node 177 
+ node 88 to node 180 
+ node 100 to node 88 
+ node 177 to node 88 
+ node 180 to node 88 
+[37mSleep for 10 sec...
+
+
+Main loop...
+*----------------------------------------------------------------------*
+TimeStamp:2022-06-16_23-52-55
+[35mList of configured plans:
+>88
+>81
+>177
+>80
+>100
+>22
+>180
+Skipping local loopback plan
+[33mMessaging own plan to node [Origin:88, From:88, To:81, About:88][37m
+[33mMessaging own plan to node [Origin:88, From:88, To:177, About:88][37m
+[33mMessaging own plan to node [Origin:88, From:88, To:80, About:88][37m
+[33mMessaging own plan to node [Origin:88, From:88, To:100, About:88][37m
+[33mMessaging own plan to node [Origin:88, From:88, To:22, About:88][37m
+[33mMessaging own plan to node [Origin:88, From:88, To:180, About:88][37m
+Generating new graph visualization...
+*----------------------------------------------------------------------*
+[36mUpdated Contact Graph List:
+ node 22 to node 88 
+ node 80 to node 88 
+ node 81 to node 88 
+ node 88 to node 22 
+ node 88 to node 80 
+ node 88 to node 81 
+ node 88 to node 88 
+ node 88 to node 88 
+ node 88 to node 100 
+ node 88 to node 177 
+ node 88 to node 180 
+ node 100 to node 88 
+ node 177 to node 88 
+ node 180 to node 88 
+[37mSleep for 10 sec...
+
+
+Main loop...
+*----------------------------------------------------------------------*
+TimeStamp:2022-06-16_23-53-06
+[35mList of configured plans:
+>88
+>81
+>177
+>80
+>100
+>22
+>180
+Skipping local loopback plan
+[33mMessaging own plan to node [Origin:88, From:88, To:81, About:88][37m
+[33mMessaging own plan to node [Origin:88, From:88, To:177, About:88][37m
+[33mMessaging own plan to node [Origin:88, From:88, To:80, About:88][37m
+[33mMessaging own plan to node [Origin:88, From:88, To:100, About:88][37m
+[33mMessaging own plan to node [Origin:88, From:88, To:22, About:88][37m
+[33mMessaging own plan to node [Origin:88, From:88, To:180, About:88][37m
+Generating new graph visualization...
+*----------------------------------------------------------------------*
+[36mUpdated Contact Graph List:
+ node 22 to node 88 
+ node 80 to node 88 
+ node 81 to node 88 
+ node 88 to node 22 
+ node 88 to node 80 
+ node 88 to node 81 
+ node 88 to node 88 
+ node 88 to node 88 
+ node 88 to node 100 
+ node 88 to node 177 
+ node 88 to node 180 
+ node 100 to node 88 
+ node 177 to node 88 
+ node 180 to node 88 
+[37mSleep for 10 sec...
+

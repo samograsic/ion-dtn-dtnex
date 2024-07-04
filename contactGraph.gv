@@ -1,14 +1,11 @@
 digraph G { layout=neato; overlap=false;
-"ipn:80" -> "ipn:88"
-"ipn:81" -> "ipn:88"
-"ipn:88" -> "ipn:80"
-"ipn:88" -> "ipn:81"
-"ipn:88" -> "ipn:88"
-"ipn:88" -> "ipn:88"
-"ipn:88" -> "ipn:100"
-"ipn:88" -> "ipn:177"
-"ipn:88" -> "ipn:180"
-"ipn:100" -> "ipn:88"
-"ipn:177" -> "ipn:88"
-"ipn:180" -> "ipn:88"
-labelloc="t"; label="IPNSIG Network Graph, Updated:2022-06-17_00-53-30"}
+"ipn:268484802" [label=< <FONT POINT-SIZE="14" FACE="Arial" COLOR="darkred"><B>ipn:268484802</B></FONT><BR/><FONT POINT-SIZE="10" FACE="Arial" COLOR="blue">PiNode<br/>samo&#64;grasic&#46;net<br/>Sweden </FONT>>];
+"ipn:268484801" [label=< <FONT POINT-SIZE="14" FACE="Arial" COLOR="darkred"><B>ipn:268484801</B></FONT><BR/><FONT POINT-SIZE="10" FACE="Arial" COLOR="blue">Pi4 Node<br/>samo&#64;grasic&#46;net<br/>Sweden </FONT>>];
+"ipn:268484800" [label=< <FONT POINT-SIZE="14" FACE="Arial" COLOR="darkred"><B>ipn:268484800</B></FONT><BR/><FONT POINT-SIZE="10" FACE="Arial" COLOR="blue">Node Description<br/>your&#64;email&#46;here<br/>Country</FONT>>];
+"ipn:268484800" -> "ipn:268484800"
+"ipn:268484800" -> "ipn:268484800"
+"ipn:268484800" -> "ipn:268484801"
+"ipn:268484800" -> "ipn:268484802"
+"ipn:268484801" -> "ipn:268484800"
+"ipn:268484802" -> "ipn:268484800"
+labelloc="t"; label="IPNSIG's DTN Network Graph, Updated:2024-07-04_04-17-32"}

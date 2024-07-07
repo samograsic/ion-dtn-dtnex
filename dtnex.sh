@@ -6,6 +6,7 @@
 #Update time in seconds
 updateInterval=30
 contactLifetime=60
+contactTimetolerance=10 #Expected time for the contact to propage through the network
 needToUpdate=false
 bundleTTL=3600
 
@@ -21,6 +22,7 @@ serviceNr=12160 #Do not change
 bpechoServiceNr=12161 #Do not change
 msgidentifier="dx"
 capturePipe=receivedmsgpipe
+
 
 ### Init commands
 function init {
@@ -91,7 +93,7 @@ function getplanlist {
 	plans=()
 	for line in "${planlines[@]}"; do
 		IFS=' ' read -ra words <<< "$line"
-		echo "Words in the line:${#words[@]}"
+		#echo "Words in the line:${#words[@]}"
 		for word in "${words[@]}"; do
 			if [[ $word =~ ^[0-9]+$ ]]; then
 				plans+=($word)
@@ -100,7 +102,7 @@ function getplanlist {
 		done
 	done
 	#Print the number of plans
-	    echo "Number of configured plans:${#plans[@]}"
+	#    echo "Number of configured plans:${#plans[@]}"
     echo "$(tput setaf 5)List of configured plans:"
     for i in "${plans[@]}"; do
         echo ">$i"
@@ -143,16 +145,18 @@ function getplanlist {
 ### Function that exchage contacts with own list of plans
 function exchagnewithneigboors {
 	echo "Exchanging messages with configured plans:"
+	currentTimestamp=$(date -u +%s)
+	expireTime=$((currentTimestamp + contactLifetime +contactTimetolerance))
+	#Fromat expiretime to be in the format of: yyyy/mm/dd-hh:mm:ss
+	expireTimeString=$(date -u -d @$expireTime +"%Y/%m/%d-%H:%M:%S")
+	#echo "Exipre Time:$expireTime"
 	for i in "${plans[@]}"; do
 		plan=${i:0}
 		if [[ "$nodeId" == "$plan" ]]; then
 			echo "Skipping local loopback plan"
 		else
-			currentTimestamp=$(date -u +%s)
-			#expireTime=$((currentTimestamp + contactLifetime)) #Absulute time not yet implemnted
-			#expireTime=$((+$contactLifetime)) #Relative time
-			echo "$(tput setaf 3)Messaging own plan to node [Origin:$nodeId, From:$nodeId, To:$plan, About:$nodeId, ExpireTime:+$contactLifetime]$(tput setaf 7)"
-			bpsourceCommand="bpsource ipn:$plan.$serviceNr \"$msgidentifier 1 c $nodeId $nodeId $nodeId $plan +$contactLifetime \" -t$bundleTTL"
+			echo "$(tput setaf 3)Messaging own plan to node [Origin:$nodeId, From:$nodeId, To:$plan, About:$nodeId, ExpireTime:$expireTime]$(tput setaf 7)"
+			bpsourceCommand="bpsource ipn:$plan.$serviceNr \"$msgidentifier 1 c $expireTime $nodeId $nodeId $nodeId $plan \" -t$bundleTTL"
 			echo $bpsourceCommand
 			eval $bpsourceCommand
 		fi
@@ -165,7 +169,7 @@ function exchagnewithneigboors {
 				echo "Skipping local loopback plan"
 			else
 				echo "$(tput setaf 3)Messaging metadata to node [Origin:$nodeId, To Node:$plan, Metadata:$nodemetadata]$(tput setaf 7)"
-				bpsourceCommand="bpsource ipn:$plan.$serviceNr \"$msgidentifier 1 m $nodeId $nodeId $nodemetadata \" -t$bundleTTL"
+				bpsourceCommand="bpsource ipn:$plan.$serviceNr \"$msgidentifier 1 m $expireTime $nodeId $nodeId $nodemetadata \" -t$bundleTTL"
    			echo $bpsourceCommand
 				eval $bpsourceCommand
 			fi
@@ -195,9 +199,9 @@ function processreceievedcontacts {
 	do
 			checkLine "$line"
 
-	if [[ -n "$line" ]]; then
-		echo "$(tput setaf 5)Received line:$line"
-	fi
+	#if [[ -n "$line" ]]; then
+	#	echo "$(tput setaf 5)Received line:$line"
+	#fi
 
 	if grep -q $msgidentifier <<<$line; then
 	    	#Routing message received, processing received command
@@ -208,24 +212,27 @@ function processreceievedcontacts {
 		if [[ "${cmdarray[1]}" == "1" ]];then
 			#echo "Version 1 message received, parsing command..."
 			if [[ "${cmdarray[2]}" == "c" ]];then
-				msgOrigin=${cmdarray[3]}
-				msgSentFrom=${cmdarray[4]}
-				nodeA=${cmdarray[5]}
-				nodeB=${cmdarray[6]}
-				expireTime=${cmdarray[7]}
-				echo "$(tput setaf 2)Contact received[Origin:$msgOrigin,From:$msgSentFrom,NodeA:$nodeA,NodeB:$nodeB, ExipreTime:$expireTime], updation ION...$(tput setaf 7)"
-                		ionadminCommandContact1="echo \"a contact +1 $expireTime $nodeA $nodeB 100000\"|ionadmin"
-                		echo $ionadminCommandContact1
+				msgExipreTime=${cmdarray[3]}
+				msgOrigin=${cmdarray[4]}
+				msgSentFrom=${cmdarray[5]}
+				nodeA=${cmdarray[6]}
+				nodeB=${cmdarray[7]}
+				echo "$(tput setaf 2)Contact received[ExipreTime:$msgExipreTime,Origin:$msgOrigin,From:$msgSentFrom,NodeA:$nodeA,NodeB:$nodeB], updation ION...$(tput setaf 7)"
+				currentTimestamp=$(date -u +%s)
+				currentTimeString=$(date -u -d @$currentTimestamp +"%Y/%m/%d-%H:%M:%S")
+				expireTimeString=$(date -u -d @$expireTime +"%Y/%m/%d-%H:%M:%S")
+          		ionadminCommandContact1="echo \"a contact $currentTimeString $expireTimeString $nodeA $nodeB 100000\"|ionadmin"
+                echo $ionadminCommandContact1
 				eval  $ionadminCommandContact1 >/dev/null
-				ionadminCommandContact2="echo \"a contact +1 $expireTime $nodeB $nodeA 100000\"|ionadmin"
-                                echo $ionadminCommandContact2
-                                eval $ionadminCommandContact2>/dev/null
-				ionadminCommandRange1="echo \"a range +1 $expireTime $nodeA $nodeB 1\"|ionadmin"
-                                echo $ionadminCommandRange1
-                                eval $ionadminCommandRange1>/dev/null
-                                ionadminCommandRange2="echo \"a range +1 $expireTime $nodeB $nodeA 1\"|ionadmin"
-                                echo $ionadminCommandRange2
-                                eval $ionadminCommandRange2>/dev/null
+				ionadminCommandContact2="echo \"a contact $currentTimeString $expireTimeString $nodeB $nodeA 100000\"|ionadmin"
+                echo $ionadminCommandContact2
+                eval $ionadminCommandContact2>/dev/null
+				ionadminCommandRange1="echo \"a range $currentTimeString $expireTimeString $nodeA $nodeB 1\"|ionadmin"
+                echo $ionadminCommandRange1
+                eval $ionadminCommandRange1>/dev/null
+                ionadminCommandRange2="echo \"a range $currentTimeString $expireTimeString $nodeB $nodeA 1\"|ionadmin"
+                echo $ionadminCommandRange2
+                eval $ionadminCommandRange2>/dev/null
 				#echo "We forward information to all neigboors, except to the node that send or create link message..."
 			        for out in "${plans[@]}"; do
         				outd=${out:0}
@@ -233,8 +240,8 @@ function processreceievedcontacts {
                 				#echo "Skipping sending message to ourself or to the msg source node:$msgOrigin that sent us this message..."
         					a=0
 					else
-                				echo "$(tput setaf 5)Forwarding message[Origin:$msgOrigin,From:$msgSentFrom,To:$outd,NodeA:$nodeA,NodeB:$nodeB,ExpireTime:$expireTime]$(tput setaf 7)"
-                				bpsourceForwardCommand="bpsource ipn:$out.$serviceNr \"$msgidentifier 1 c $msgOrigin $nodeId $nodeA $nodeB $expireTime \" -t$bundleTTL"
+                				echo "$(tput setaf 5)Forwarding message[Origin:$msgOrigin,From:$msgSentFrom,To:$outd,NodeA:$nodeA,NodeB:$nodeB,ExpireTime:$msgExipreTime]$(tput setaf 7)"
+                				bpsourceForwardCommand="bpsource ipn:$out.$serviceNr \"$msgidentifier 1 c $msgExipreTime $msgOrigin $nodeId $nodeA $nodeB \" -t$bundleTTL"
                 				#echo $bpsourceForwardCommand
                 				eval $bpsourceForwardCommand>/dev/null
         				fi
@@ -242,14 +249,15 @@ function processreceievedcontacts {
 
 			else
 			if [[ "${cmdarray[2]}" == "m" ]];then
-				msgOrigin=${cmdarray[3]}
-				msgSentFrom=${cmdarray[4]}
+				msgExipreTime=${cmdarray[3]}
+				msgOrigin=${cmdarray[4]}
+				msgSentFrom=${cmdarray[5]}
 				#The metadata is the rest of the array elements expect the last one
-				metadatareceived="${cmdarray[@]:5:${#cmdarray[@]}-1}"
+				metadatareceived="${cmdarray[@]:6:${#cmdarray[@]}-1}"
 				#Trim the metadata end of string from the last character
 				metadatareceived=${metadatareceived::-1}
 				# Remove the line that assigns the value to the unused variable
-				echo "$(tput setaf 2)Node Metadata received[Origin:$msgOrigin,From:$msgSentFrom,Node Metadata:$metadatareceived], updating local metadata list...$(tput setaf 7)"
+				echo "$(tput setaf 2)Node Metadata received[msgExipreTime:$msgExipreTime,Origin:$msgOrigin,From:$msgSentFrom,Node Metadata:$metadatareceived], updating local metadata list...$(tput setaf 7)"
 
 				#Update the local nodesmetadata.txt file with the received metadata. The file format is: "nodeId:metadata". If the node is not in the file, add it, if it is, update the metadata.
 				if [ -f "nodesmetadata.txt" ]; then
@@ -282,7 +290,7 @@ function processreceievedcontacts {
         					a=0
 					else
                 				echo "$(tput setaf 5)Forwarding Metadata[Origin:$msgOrigin,From:$msgSentFrom,To:$outd,Metadata:$metadatareceived]$(tput setaf 7)"
-                				bpsourceForwardCommand="bpsource ipn:$out.$serviceNr \"$msgidentifier 1 m $msgOrigin $nodeId $metadatareceived \" -t$bundleTTL"
+                				bpsourceForwardCommand="bpsource ipn:$out.$serviceNr \"$msgidentifier 1 m $msgExipreTime $msgOrigin $nodeId $metadatareceived \" -t$bundleTTL"
                 				#echo $bpsourceForwardCommand
                 				eval $bpsourceForwardCommand>/dev/null
         				fi

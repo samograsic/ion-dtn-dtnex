@@ -1,3 +1,2 @@
-268484801:HeimlautaNode<br/>samo@grasic.net<br/>Sweden 
-268484802:RaspberryPI3 Node<br/>samo@grasic.net<br/>Test2
 268484803:EEE-LoRaGW,samo@grasic.net,Slovenia 
+268501000:EEE-LoRaGW,samo@grasic.net,Slovenia 

@@ -9,11 +9,14 @@ contactLifetime=60
 needToUpdate=false
 bundleTTL=3600
 
-nodemetadata="Node Description<br/>your@email.here<br/>Country"
+if [ -f "nodemeta.conf" ]; then
+	nodemetadata=$(cat nodemeta.conf)
+fi
+
 
 #Use this definition if you want to visualize the contact graph plan (Note:graphviz tool needs to be installed on the system)
-createGraph=false
-graphFile=contactGraph.png
+createGraph=true
+graphFile=/var/www/openipn.latelab.se/GetIPN/public/contactGraph.png
 
 echo "Starting a DTNEX script, author: Samo Grasic (samo@grasic.net), v0.5 ..."
 
@@ -169,7 +172,7 @@ function exchagnewithneigboors2 {
 			if [[ "$nodeId" == "$plan" ]]; then
 				echo "Skipping local loopback plan"
 			else
-				echo "$(tput setaf 3)Messaging metadata to node [Origin:$nodeId, From:$nodeId, Metadata:$nodemetadata]$(tput setaf 7)"
+				echo "$(tput setaf 3)Messaging metadata to node [Origin:$nodeId, To Node:$$plan, Metadata:$nodemetadata]$(tput setaf 7)"
 				bpsourceCommand="bpsource ipn:$plan.$serviceNr \"$msgidentifier 1 m $nodeId $nodeId $nodemetadata \" -t$bundleTTL"
 				eval $bpsourceCommand
 			fi
@@ -416,34 +419,47 @@ function creategraph {
 	dot -Tpng contactGraph.gv -o $graphFile    
 }
 
-init
+# Main part of the script is now running under an ION watchdog
+WATCH_INTERVAL=15
+TIMEOUT=2
+while true; do
+    # Run bpadmin command to check Ion service and targeted service condition
+	echo "Waiting for the ION service to start..."
+    response=$(timeout "$TIMEOUT" bpadmin <<< "l" 2>&1 | tr -d '\r\n')
+    exit_code="$?"
+    datetime="$(date +'%Y-%m-%d %H:%M:%S')"
+    if [ "$exit_code" -eq 0 ] && [[ "$response" == *List\ what?:* ]]; then
+        echo "$datetime - Ion service is running. Targeted service condition is met."
+        echo "q" | bpadmin
 
-
-# While bpsink is running...
-while kill -0 $pid 2> /dev/null; do
-    	# Do stuff
-	echo
-	TIMESTAMP=`date +%Y-%m-%d_%H-%M-%S`
-	echo "Main Loop - TimeStamp:$TIMESTAMP"
-	echo "Getting a fresh list of neighboors..."
-	getplanlist2 #Get list of neigboors
-	if [ "$needToUpdate" = true ]; then
-		exchagnewithneigboors2
-	fi
-	processreceievedcontacts
-    getcontacts
-	
-	if [ "$createGraph" = "true" ]; then
-		creategraph
-	fi
-	echo "$(tput setaf 7)Sleeping for $updateInterval sec..."
-	echo
-	sleep $updateInterval
-	echo "Done sleeping..."
+	init
+	# While bpsink is running...
+	while kill -0 $pid 2> /dev/null; do
+	    # Do stuff
+		echo
+		TIMESTAMP=`date +%Y-%m-%d_%H-%M-%S`
+		echo "Main Loop - TimeStamp:$TIMESTAMP"
+		echo "Getting a fresh list of neighboors..."
+		getplanlist2 #Get list of neigboors
+		if [ "$needToUpdate" = true ]; then
+			exchagnewithneigboors2
+		fi
+		processreceievedcontacts
+    	getcontacts
+		if [ "$createGraph" = "true" ]; then
+			creategraph
+		fi
+		echo "$(tput setaf 7)Sleeping for $updateInterval sec..."
+		echo
+		sleep $updateInterval
+	done
+	# Disable the trap on a normal exit.
+	trap - EXIT
+    fi
+    sleep "$WATCH_INTERVAL"
 done
 
 
-# Disable the trap on a normal exit.
-trap - EXIT
+
 
 

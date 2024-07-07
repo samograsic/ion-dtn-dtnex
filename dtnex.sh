@@ -4,25 +4,22 @@
 # Authors: Samo Grasic, samo@grasic.net
 
 #Update time in seconds
-updateInterval=10
+updateInterval=30
 contactLifetime=60
 needToUpdate=false
 bundleTTL=3600
 
-if [ -f "nodemeta.conf" ]; then
-	nodemetadata=$(cat nodemeta.conf)
+#Read set of varables from dtnex.conf file that is optional
+if [ -f "dtnex.conf" ]; then
+	source dtnex.conf
 fi
-
-
-#Use this definition if you want to visualize the contact graph plan (Note:graphviz tool needs to be installed on the system)
-createGraph=true
-graphFile=/var/www/openipn.latelab.se/GetIPN/public/contactGraph.png
 
 echo "Starting a DTNEX script, author: Samo Grasic (samo@grasic.net), v0.5 ..."
 
 ###Default settings
 serviceNr=12160 #Do not change
-msgidentifier="xmsg"
+bpechoServiceNr=12161 #Do not change
+msgidentifier="dx"
 capturePipe=receivedmsgpipe
 
 ### Init commands
@@ -65,6 +62,7 @@ echo "$(tput setaf 3)Parsed Node ID:$nodeId$(tput setaf 7)"
 
 #Registering needed endpoints needed to exchange messages, do not change service nrs.
 bpadminOutput1=$(echo "a endpoint ipn:$nodeId.$serviceNr q"|bpadmin)
+bpadminOutput1=$(echo "a endpoint ipn:$nodeId.$bpechoServiceNr q"|bpadmin)
 #bpadminOutput2=$(echo "a endpoint ipn:$nodeId.$outgoingSerciceNr q"|bpadmin)
 
 #Getting locally registered  endpoints
@@ -76,7 +74,6 @@ echo "Starting bpsink with:$bpsinkCommand"
 bpsink ipn:$nodeId.$serviceNr>$capturePipe&
 pid=$!
 
-
 # If this script is killed, kill the child process.
 trap "kill $pid 2> /dev/null" EXIT
 
@@ -84,35 +81,30 @@ trap "kill $pid 2> /dev/null" EXIT
 
 ###End of INIT function
 
-### Function that gets the list of plans/neigboors
+
 function getplanlist {
     echo "Getting a plan list (neighbour  nodes)..."
-	plans=($(echo "l plan"|ipnadmin|sed 's@^[^0-9]*\([0-9]\+\).*@\1@'))
-	unset plans[-1] # removes the last 1 elements
-	unset plans[-1] # removes the last 1 elements
-	unset plans[-1] # removes the last 1 elements
-	echo "Number of configured plans:${#plans[@]}"
-	echo "$(tput setaf 5)List of configured plans:"
-	for i in "${plans[@]}"; do
-  	echo ">$i"
+	#start the ipnadmin command and enter the "l plan" command,store output to planout variable, exit the ipnadmin command using q and carriage return
+	planout=$(echo "l plan"|ipnadmin)
+	readarray -t planlines <<< $planout
+	#clear any previous plans
+	plans=()
+	for line in "${planlines[@]}"; do
+		IFS=' ' read -ra words <<< "$line"
+		echo "Words in the line:${#words[@]}"
+		for word in "${words[@]}"; do
+			if [[ $word =~ ^[0-9]+$ ]]; then
+				plans+=($word)
+				break
+			fi
+		done
 	done
-
-
-
-}
-
-function getplanlist2 {
-	echo "Getting a plan list (neighbour  nodes)..."
-	plans=($(echo "l plan"|ipnadmin|sed 's@^[^0-9]*\([0-9]\+\).*@\1@'))
-	unset plans[-1] # removes the last 1 elements
-	unset plans[-1] # removes the last 1 elements
-	unset plans[-1] # removes the last 1 elements
-	echo "Number of configured plans:${#plans[@]}"
-	echo "$(tput setaf 5)List of configured plans:"
-	for i in "${plans[@]}"; do
-		echo ">$i"
-	done
-
+	#Print the number of plans
+	    echo "Number of configured plans:${#plans[@]}"
+    echo "$(tput setaf 5)List of configured plans:"
+    for i in "${plans[@]}"; do
+        echo ">$i"
+    done
 	#Check if the plan list is updated
 	needToUpdate=false
 	if [ -f "planlist.txt" ]; then
@@ -123,16 +115,16 @@ function getplanlist2 {
 			currentTimestamp=$(date -u +%s)
 			timeDiff=$((currentTimestamp - prevTimestamp))
 			if [ "$timeDiff" -gt "$contactLifetime" ]; then
-				#echo "Plan list has expired, updating the plan list file..."
+				echo "Plan list has expired, updating the plan list file..."
 				needToUpdate=true
 			else
 				if [ "${#prevplans[@]}" -ne "${#plans[@]}" ]; then
-					#echo "Plan list is updated, updating the plan list file..."
+					echo "Plan list is updated, updating the plan list file..."
 					needToUpdate=true
 				fi
 			fi
 		else
-			#echo "Plan list file does not exist, creating the plan list file..."
+			echo "Plan list file does not exist, creating the plan list file..."
 			needToUpdate=true
 		fi
 	if [ "$needToUpdate" = true ]; then
@@ -149,7 +141,7 @@ function getplanlist2 {
 
 
 ### Function that exchage contacts with own list of plans
-function exchagnewithneigboors2 {
+function exchagnewithneigboors {
 	echo "Exchanging messages with configured plans:"
 	for i in "${plans[@]}"; do
 		plan=${i:0}
@@ -172,8 +164,9 @@ function exchagnewithneigboors2 {
 			if [[ "$nodeId" == "$plan" ]]; then
 				echo "Skipping local loopback plan"
 			else
-				echo "$(tput setaf 3)Messaging metadata to node [Origin:$nodeId, To Node:$$plan, Metadata:$nodemetadata]$(tput setaf 7)"
+				echo "$(tput setaf 3)Messaging metadata to node [Origin:$nodeId, To Node:$plan, Metadata:$nodemetadata]$(tput setaf 7)"
 				bpsourceCommand="bpsource ipn:$plan.$serviceNr \"$msgidentifier 1 m $nodeId $nodeId $nodemetadata \" -t$bundleTTL"
+   			echo $bpsourceCommand
 				eval $bpsourceCommand
 			fi
 		done
@@ -193,9 +186,6 @@ function checkLine {
 function gethash {
 	echo -n $1 | sha256sum | awk '{print $1}'
 }
-
-
-
 
 #Processing received network messages
 function processreceievedcontacts {
@@ -272,7 +262,7 @@ function processreceievedcontacts {
 							nodefound=true
 							echo "Node found in the metadata list, updating the metadata..."
 							#Update the metadata
-							sed -i "s/$msgOrigin:.*/$msgOrigin:$metadatareceived/" nodesmetadata.txt
+							sed -i "s|$msgOrigin:.*|$msgOrigin:$metadatareceived|" nodesmetadata.txt
 						fi
 					done
 					if [ "$nodefound" = false ]; then
@@ -392,6 +382,7 @@ function creategraph {
 			#Fix the metadata line, Escaping Characters: @ is replaced with &#64; and . with &#46; to ensure they are properly interpreted.
 			metadata=$(echo $metadata|sed 's/@/\&#64;/g')
 			metadata=$(echo $metadata|sed 's/\./\&#46;/g')
+			metadata=$(echo $metadata|sed 's/,/<br\/>/g')
 			#echo "Node:$node Metadata:$metadata"
 			#Add the node to the graph
 			echo "\"ipn:$node\" [label=< <FONT POINT-SIZE=\"14\" FACE=\"Arial\" COLOR=\"darkred\"><B>ipn:$node</B></FONT><BR/><FONT POINT-SIZE=\"10\" FACE=\"Arial\" COLOR=\"blue\">$metadata</FONT>>];">>contactGraph.gv
@@ -400,6 +391,8 @@ function creategraph {
 	#Using the same template we generate .gv line for ourself using the nodemetadata and nodeid variables
 	nodemetadata_gv=$(echo $nodemetadata|sed 's/@/\&#64;/g')
 	nodemetadata_gv=$(echo $nodemetadata_gv|sed 's/\./\&#46;/g')
+	nodemetadata_gv=$(echo $nodemetadata_gv|sed 's/,/<br\/>/g')
+
 	echo "\"ipn:$nodeId\" [label=< <FONT POINT-SIZE=\"14\" FACE=\"Arial\" COLOR=\"darkred\"><B>ipn:$nodeId</B></FONT><BR/><FONT POINT-SIZE=\"10\" FACE=\"Arial\" COLOR=\"blue\">$nodemetadata_gv</FONT>>];">>contactGraph.gv 
 	echo "$(tput setaf 6)Updated Contact Graph List:"
 	contstr=$(echo "l contact"|ionadmin|grep -o -P '(?<=From).*?(?=is)')
@@ -431,28 +424,27 @@ while true; do
     if [ "$exit_code" -eq 0 ] && [[ "$response" == *List\ what?:* ]]; then
         echo "$datetime - Ion service is running. Targeted service condition is met."
         echo "q" | bpadmin
+		init
+		# While bpsink is running...
+		while kill -0 $pid 2> /dev/null; do
+		    # Do stuff
+			echo
+			TIMESTAMP=`date +%Y-%m-%d_%H-%M-%S`
+			echo "Main Loop - TimeStamp:$TIMESTAMP"
+			echo "Getting a fresh list of neighboors..."
+			getplanlist #Get list of neigboors
+			if [ "$needToUpdate" = true ]; then
+				exchagnewithneigboors
+			fi
+			processreceievedcontacts
+    		getcontacts
+			if [ -n "$createGraph" ] && [ "$createGraph" = "true" ]; then
+				creategraph
+			fi
+			echo "$(tput setaf 7)Waiting for new contact messages..."
+			sleep $updateInterval
 
-	init
-	# While bpsink is running...
-	while kill -0 $pid 2> /dev/null; do
-	    # Do stuff
-		echo
-		TIMESTAMP=`date +%Y-%m-%d_%H-%M-%S`
-		echo "Main Loop - TimeStamp:$TIMESTAMP"
-		echo "Getting a fresh list of neighboors..."
-		getplanlist2 #Get list of neigboors
-		if [ "$needToUpdate" = true ]; then
-			exchagnewithneigboors2
-		fi
-		processreceievedcontacts
-    	getcontacts
-		if [ "$createGraph" = "true" ]; then
-			creategraph
-		fi
-		echo "$(tput setaf 7)Sleeping for $updateInterval sec..."
-		echo
-		sleep $updateInterval
-	done
+		done
 	# Disable the trap on a normal exit.
 	trap - EXIT
     fi

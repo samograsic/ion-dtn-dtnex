@@ -1,6 +1,8 @@
 digraph G { layout=neato; overlap=false;
-"ipn:268484802" [label=< <FONT POINT-SIZE="14" FACE="Arial" COLOR="darkred"><B>ipn:268484802</B></FONT><BR/><FONT POINT-SIZE="10" FACE="Arial" COLOR="blue">PI3 Node<br/>samo&#64;grasic&#46;net<br/>Slovenia </FONT>>];
-"ipn:268484800" [label=< <FONT POINT-SIZE="14" FACE="Arial" COLOR="darkred"><B>ipn:268484800</B></FONT><BR/><FONT POINT-SIZE="10" FACE="Arial" COLOR="blue">Central OpenIPN Node<br/>your&#64;email&#46;here<br/>Sweden</FONT>>];
+"ipn:268484801" [label=< <FONT POINT-SIZE="14" FACE="Arial" COLOR="darkred"><B>ipn:268484801</B></FONT><BR/><FONT POINT-SIZE="10" FACE="Arial" COLOR="blue">HeimlautaNode<br/>samo&#64;grasic&#46;net<br/>Sweden </FONT>>];
+"ipn:268484802" [label=< <FONT POINT-SIZE="14" FACE="Arial" COLOR="darkred"><B>ipn:268484802</B></FONT><BR/><FONT POINT-SIZE="10" FACE="Arial" COLOR="blue">RaspberryPI3 Node<br/>samo&#64;grasic&#46;net<br/>Test2</FONT>>];
+"ipn:268484803" [label=< <FONT POINT-SIZE="14" FACE="Arial" COLOR="darkred"><B>ipn:268484803</B></FONT><BR/><FONT POINT-SIZE="10" FACE="Arial" COLOR="blue">EEE-LoRaGW<br/>samo&#64;grasic&#46;net<br/>Slovenia </FONT>>];
+"ipn:268484800" [label=< <FONT POINT-SIZE="14" FACE="Arial" COLOR="darkred"><B>ipn:268484800</B></FONT><BR/><FONT POINT-SIZE="10" FACE="Arial" COLOR="blue">OpenIPN Node<br/>samo&#64;grasic&#46;net<br/>Sweden</FONT>>];
 "ipn:268435600" -> "ipn:268484800"
 "ipn:268484800" -> "ipn:268435600"
 "ipn:268484800" -> "ipn:268484800"
@@ -11,4 +13,4 @@ digraph G { layout=neato; overlap=false;
 "ipn:268484801" -> "ipn:268484800"
 "ipn:268484802" -> "ipn:268484800"
 "ipn:268501000" -> "ipn:268484800"
-labelloc="t"; label="IPNSIG's DTN Network Graph, Updated:2024-07-05_13-06-54"}
+labelloc="t"; label="IPNSIG's DTN Network Graph, Updated:2024-07-07_23-31-59"}

@@ -1,2 +1,5 @@
-268484803:EEE-LoRaGW,samo@grasic.net,Slovenia 
-268501000:EEE-LoRaGW,samo@grasic.net,Slovenia 
+268484803:EEE-LoRaGW,samo@grasic.net,Slove
+268484801:HeimlautaPI-Node,samo@grasic.net
+268484802:PI3Node,samo@grasic.net,Slovenia
+268501000:MEIS Node,info@meis.si,Sloveni
+268484804:BackupNode,@LateLab,Netherlands

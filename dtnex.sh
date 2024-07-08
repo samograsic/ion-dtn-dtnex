@@ -5,24 +5,31 @@
 
 #Update time in seconds
 updateInterval=30
-contactLifetime=60
-contactTimetolerance=10 #Expected time for the contact to propage through the network
+contactLifetime=3600
+# Expected time for the contact to propagate through the network and/or account for clock skew
+contactTimeTolerance=1800
 needToUpdate=false
 bundleTTL=3600
+
+presSharedNetworkKey="open"
 
 #Read set of varables from dtnex.conf file that is optional
 if [ -f "dtnex.conf" ]; then
 	source dtnex.conf
 fi
 
-echo "Starting a DTNEX script, author: Samo Grasic (samo@grasic.net), v0.5 ..."
+echo "Starting a DTNEX script, author: Samo Grasic (samo@grasic.net), v0.6..."
 
 ###Default settings
 serviceNr=12160 #Do not change
 bpechoServiceNr=12161 #Do not change
-msgidentifier="dx"
 capturePipe=receivedmsgpipe
 
+
+#This function takes input string as an arguments and calculates the hash value using the linux hash command
+function hashString {
+	echo -n $presSharedNetworkKey$1 | sha256sum | awk '{print substr($1, 1, 10)}'
+}
 
 ### Init commands
 function init {
@@ -44,22 +51,20 @@ bpadminOutput=$(echo "l endpoint"|bpadmin)
 
 localEIDs=($(echo "l endpoint"|bpadmin|grep -E -o "\bipn+:[0-9.-]+\.[0-9.-]+\b"))
 
-echo "Number of registered  EIDs:${#localEIDs[@]}"
-echo "List of local EIDs:"
+#echo "Number of registered  EIDs:${#localEIDs[@]}"
+#echo "List of local EIDs:"
 
-for i in "${localEIDs[@]}"; do
-  echo ">$i"
-done
+#for i in "${localEIDs[@]}"; do
+#  echo ">$i"
+#done
 
 
-echo "Extracting the node EID number from the first registered  endpoint... ${localEIDs[0]}"
+#echo "Extracting the node EID number from the first registered  endpoint... ${localEIDs[0]}"
 IFS=':' read -ra ipn_array <<< ${localEIDs[0]}
 echo "ipnarray:${ipn_array[1]}"
 IFS='.' read -ra nodeIdArray <<< ${ipn_array[1]}
 nodeId=${nodeIdArray[0]};
 echo "$(tput setaf 3)Parsed Node ID:$nodeId$(tput setaf 7)"
-
-
 
 
 #Registering needed endpoints needed to exchange messages, do not change service nrs.
@@ -76,12 +81,18 @@ echo "Starting bpsink with:$bpsinkCommand"
 bpsink ipn:$nodeId.$serviceNr>$capturePipe&
 pid=$!
 
-# If this script is killed, kill the child process.
-trap "kill $pid 2> /dev/null" EXIT
+bpechoCommand="bpecho ipn:$nodeId.$bpechoServiceNr&"
+echo "Starting bpecho with:$bpechoCommand"
+bpecho ipn:$nodeId.$bpechoServiceNr&
+pid2=$!
+
+# If this script is killed, kill the child processes.
+trap "kill $pid $pid2 2> /dev/null" EXIT
 
 }
 
 ###End of INIT function
+
 
 
 function getplanlist {
@@ -138,10 +149,6 @@ function getplanlist {
 	fi
 }
 
-
-
-
-
 ### Function that exchage contacts with own list of plans
 function exchagnewithneigboors {
 	echo "Exchanging messages with configured plans:"
@@ -155,21 +162,25 @@ function exchagnewithneigboors {
 		if [[ "$nodeId" == "$plan" ]]; then
 			echo "Skipping local loopback plan"
 		else
-			echo "$(tput setaf 3)Messaging own plan to node [Origin:$nodeId, From:$nodeId, To:$plan, About:$nodeId, ExpireTime:$expireTime]$(tput setaf 7)"
-			bpsourceCommand="bpsource ipn:$plan.$serviceNr \"$msgidentifier 1 c $expireTime $nodeId $nodeId $nodeId $plan \" -t$bundleTTL"
+			hashValue=$(hashString "1 c $expireTime $nodeId $nodeId $plan") #Note, we do not include From node in the hash as it get changed through the network
+			echo "$(tput setaf 3)Messaging own plan to node [hash:$hashValue,ExpireTime:$expireTime,Origin:$nodeId, From:$nodeId, To:$plan, About:$nodeId]$(tput setaf 7)"
+			bpsourceCommand="bpsource ipn:$plan.$serviceNr \"$hashValue 1 c $expireTime $nodeId $nodeId $nodeId $plan\" -t$bundleTTL"
 			echo $bpsourceCommand
 			eval $bpsourceCommand
 		fi
 	done
 	if [ -n "$nodemetadata" ]; then
+		#Trim nodemetadata to 30 characters
+		nodemetadata=${nodemetadata:0:32}
 		echo "Exchanging metadata with configured plans:"
 		for i in "${plans[@]}"; do
 			plan=${i:0}
 			if [[ "$nodeId" == "$plan" ]]; then
 				echo "Skipping local loopback plan"
 			else
-				echo "$(tput setaf 3)Messaging metadata to node [Origin:$nodeId, To Node:$plan, Metadata:$nodemetadata]$(tput setaf 7)"
-				bpsourceCommand="bpsource ipn:$plan.$serviceNr \"$msgidentifier 1 m $expireTime $nodeId $nodeId $nodemetadata \" -t$bundleTTL"
+				hashValue=$(hashString "1 m $expireTime $nodeId $nodemetadata") #Note, we do not include From node in the hash as it get changed through the network
+				echo "$(tput setaf 3)Messaging metadata to node [hash:$hashValue,Origin:$nodeId, To Node:$plan, Metadata:$nodemetadata]$(tput setaf 7)"
+				bpsourceCommand="bpsource ipn:$plan.$serviceNr \"$hashValue 1 m $expireTime $nodeId $nodeId $nodemetadata\" -t$bundleTTL"
    			echo $bpsourceCommand
 				eval $bpsourceCommand
 			fi
@@ -186,135 +197,171 @@ function checkLine {
 	fi
 }
 
-# I need to get a hash value of the string in bash, write a function that calculates it using basic bash commands using sha256
-function gethash {
-	echo -n $1 | sha256sum | awk '{print $1}'
-}
 
 #Processing received network messages
 function processreceievedcontacts {
 	echo "Processing received contacts..."
-	cat $capturePipe
-	cat $capturePipe|while read -r line
+#	cat $capturePipe
+	cat $capturePipe | while read -r line
 	do
-			checkLine "$line"
+		checkLine "$line"
 
-	#if [[ -n "$line" ]]; then
-	#	echo "$(tput setaf 5)Received line:$line"
-	#fi
+#		if [[ -n "$line" ]]; then
+#			echo "$(tput setaf 5)Received line:$line"
+#		fi
 
-	if grep -q $msgidentifier <<<$line; then
-	    	#Routing message received, processing received command
-		echo "$(tput setaf 5)Contact message received, processing..."
-		cmdarray=($line)
-		echo "message array: ${cmdarray[@]}"
-		echo "Number of elements in the messagearray: ${#cmdarray[@]}"
-		if [[ "${cmdarray[1]}" == "1" ]];then
-			#echo "Version 1 message received, parsing command..."
-			if [[ "${cmdarray[2]}" == "c" ]];then
-				msgExipreTime=${cmdarray[3]}
-				msgOrigin=${cmdarray[4]}
-				msgSentFrom=${cmdarray[5]}
-				nodeA=${cmdarray[6]}
-				nodeB=${cmdarray[7]}
-				echo "$(tput setaf 2)Contact received[ExipreTime:$msgExipreTime,Origin:$msgOrigin,From:$msgSentFrom,NodeA:$nodeA,NodeB:$nodeB], updation ION...$(tput setaf 7)"
-				currentTimestamp=$(date -u +%s)
-				currentTimeString=$(date -u -d @$currentTimestamp +"%Y/%m/%d-%H:%M:%S")
-				expireTimeString=$(date -u -d @$expireTime +"%Y/%m/%d-%H:%M:%S")
-          		ionadminCommandContact1="echo \"a contact $currentTimeString $expireTimeString $nodeA $nodeB 100000\"|ionadmin"
-                echo $ionadminCommandContact1
-				eval  $ionadminCommandContact1 >/dev/null
-				ionadminCommandContact2="echo \"a contact $currentTimeString $expireTimeString $nodeB $nodeA 100000\"|ionadmin"
-                echo $ionadminCommandContact2
-                eval $ionadminCommandContact2>/dev/null
-				ionadminCommandRange1="echo \"a range $currentTimeString $expireTimeString $nodeA $nodeB 1\"|ionadmin"
-                echo $ionadminCommandRange1
-                eval $ionadminCommandRange1>/dev/null
-                ionadminCommandRange2="echo \"a range $currentTimeString $expireTimeString $nodeB $nodeA 1\"|ionadmin"
-                echo $ionadminCommandRange2
-                eval $ionadminCommandRange2>/dev/null
-				#echo "We forward information to all neigboors, except to the node that send or create link message..."
-			        for out in "${plans[@]}"; do
-        				outd=${out:0}
-        				if [ "$msgOrigin" == "$outd" ] || [ "$msgSentFrom" == "$outd" ]  || [ "$nodeId" == "$outd" ] ; then
-                				#echo "Skipping sending message to ourself or to the msg source node:$msgOrigin that sent us this message..."
-        					a=0
-					else
-                				echo "$(tput setaf 5)Forwarding message[Origin:$msgOrigin,From:$msgSentFrom,To:$outd,NodeA:$nodeA,NodeB:$nodeB,ExpireTime:$msgExipreTime]$(tput setaf 7)"
-                				bpsourceForwardCommand="bpsource ipn:$out.$serviceNr \"$msgidentifier 1 c $msgExipreTime $msgOrigin $nodeId $nodeA $nodeB \" -t$bundleTTL"
-                				#echo $bpsourceForwardCommand
-                				eval $bpsourceForwardCommand>/dev/null
-        				fi
-        			done
-
-			else
-			if [[ "${cmdarray[2]}" == "m" ]];then
-				msgExipreTime=${cmdarray[3]}
-				msgOrigin=${cmdarray[4]}
-				msgSentFrom=${cmdarray[5]}
-				#The metadata is the rest of the array elements expect the last one
-				metadatareceived="${cmdarray[@]:6:${#cmdarray[@]}-1}"
-				#Trim the metadata end of string from the last character
-				metadatareceived=${metadatareceived::-1}
-				# Remove the line that assigns the value to the unused variable
-				echo "$(tput setaf 2)Node Metadata received[msgExipreTime:$msgExipreTime,Origin:$msgOrigin,From:$msgSentFrom,Node Metadata:$metadatareceived], updating local metadata list...$(tput setaf 7)"
-
-				#Update the local nodesmetadata.txt file with the received metadata. The file format is: "nodeId:metadata". If the node is not in the file, add it, if it is, update the metadata.
-				if [ -f "nodesmetadata.txt" ]; then
-					echo "Nodes metadata file exists, reading the previous metadata list..."
-					readarray -t prevmetadata < nodesmetadata.txt
-					#Check if the node is in the list
-					nodefound=false
-					for i in "${prevmetadata[@]}"; do
-						if [[ $i == *"$msgOrigin"* ]]; then
-							nodefound=true
-							echo "Node found in the metadata list, updating the metadata..."
-							#Update the metadata
-							sed -i "s|$msgOrigin:.*|$msgOrigin:$metadatareceived|" nodesmetadata.txt
-						fi
-					done
-					if [ "$nodefound" = false ]; then
-						echo "Node not found in the metadata list, adding the node..."
-						echo "$msgOrigin:$metadatareceived" >> nodesmetadata.txt
+		#Extract the string between ' characters from the line variable
+		line=$(echo $line | grep -o "'.*'" | sed "s/'//g")
+		#Check if the line is not empty
+		if [[ -n "$line" ]]; then
+			echo "$(tput setaf 5)DTNEx message received, processing..."
+			cmdarray=($line)
+#			echo "message array: ${cmdarray[@]}"
+#			echo "Number of elements in the messagearray: ${#cmdarray[@]}"
+			msgHash=${cmdarray[0]}
+			#In a file receivedHashes.txt we store all received hashes together with the timestamp when the hash was received. Before processing message we check if the hash was already received. If not we continue with processing and update the receivedHashes.txt file, if it was we skip the message.
+			if [ -f "receivedHashes.txt" ]; then
+#				echo "Received Hashes file exists, reading the previous hash list..."
+				readarray -t prevhashes < receivedHashes.txt
+				#Check if the hash is in the list
+				hashfound=false
+				for i in "${prevhashes[@]}"; do
+					if [[ $i == *"$msgHash"* ]]; then
+						hashfound=true
+						echo "Hash found in the hash list, skipping the message..."
 					fi
-				else
-					echo "Nodes metadata file does not exist, creating the metadata list file..."
-					echo "$msgOrigin:$metadatareceived" >> nodesmetadata.txt
+				done
+				if [ "$hashfound" = false ]; then
+					echo "Hash not found in the hash list, adding the hash..."
+					echo "$msgHash" >> receivedHashes.txt
 				fi
-
-                #echo "We forward information to all neigboors, except to the node that send or create link message..."
-			        for out in "${plans[@]}"; do
-        				outd=${out:0}
-        				if [ "$msgOrigin" == "$outd" ] || [ "$msgSentFrom" == "$outd" ]  || [ "$nodeId" == "$outd" ] ; then
-                				#echo "Skipping sending message to ourself or to the msg source node:$msgOrigin that sent us this message..."
-        					a=0
-					else
-                				echo "$(tput setaf 5)Forwarding Metadata[Origin:$msgOrigin,From:$msgSentFrom,To:$outd,Metadata:$metadatareceived]$(tput setaf 7)"
-                				bpsourceForwardCommand="bpsource ipn:$out.$serviceNr \"$msgidentifier 1 m $msgExipreTime $msgOrigin $nodeId $metadatareceived \" -t$bundleTTL"
-                				#echo $bpsourceForwardCommand
-                				eval $bpsourceForwardCommand>/dev/null
-        				fi
-        			done
-				else
-			       	echo "Unknown message received!"
-				fi
+			else
+				echo "Received Hashes file does not exist, creating the hash list file..."
+				echo "$msgHash" >> receivedHashes.txt
 			fi
-		else
-			echo "Unknown version of message received!"
+			#While hash file has more than 1000 lines, we remove the first line
+			if [ $(wc -l < receivedHashes.txt) -gt 1000 ]; then
+				echo "Received Hashes file has more than 1000 lines, removing the first line..."
+				sed -i '1d' receivedHashes.txt
+			fi
+
+			#Check if hashfound is false, if it is we continue with processing the message
+			if [ "$hashfound" = false ]; then
+				if [[ "${cmdarray[1]}" == "1" ]]; then
+					#echo "Version 1 message received, parsing command..."
+					if [[ "${cmdarray[2]}" == "c" ]]; then
+						msgExipreTime=${cmdarray[3]}
+						msgOrigin=${cmdarray[4]}
+						msgSentFrom=${cmdarray[5]}
+						nodeA=${cmdarray[6]}
+						nodeB=${cmdarray[7]}
+						echo "$(tput setaf 2)Contact received[RHash:$msgHash,ExipreTime:$msgExipreTime,Origin:$msgOrigin,From:$msgSentFrom,NodeA:$nodeA,NodeB:$nodeB], updation ION...$(tput setaf 7)"
+						calcHashValue=$(hashString "1 c $msgExipreTime $msgOrigin $nodeA $nodeB") #Note, we do not include From node in the hash as it get changed through the network
+						if [[ "$msgHash" == "$calcHashValue" ]]; then
+							echo "Hash values match, updating ION..."
+							currentTimestamp=$(date -u +%s)
+							currentTimeString=$(date -u -d @$currentTimestamp +"%Y/%m/%d-%H:%M:%S")
+							expireTimeString=$(date -u -d @$msgExipreTime +"%Y/%m/%d-%H:%M:%S")
+							ionadminCommandContact1="echo \"a contact $currentTimeString $expireTimeString $nodeA $nodeB 100000\"|ionadmin"
+							#echo $ionadminCommandContact1
+							eval $ionadminCommandContact1 >/dev/null
+							ionadminCommandContact2="echo \"a contact $currentTimeString $expireTimeString $nodeB $nodeA 100000\"|ionadmin"
+							#echo $ionadminCommandContact2
+							eval $ionadminCommandContact2 >/dev/null
+							ionadminCommandRange1="echo \"a range $currentTimeString $expireTimeString $nodeA $nodeB 1\"|ionadmin"
+							#echo $ionadminCommandRange1
+							eval $ionadminCommandRange1 >/dev/null
+							ionadminCommandRange2="echo \"a range $currentTimeString $expireTimeString $nodeB $nodeA 1\"|ionadmin"
+							#echo $ionadminCommandRange2
+							eval $ionadminCommandRange2 >/dev/null
+						else
+							echo "$(tput setaf 1)Hash values do not match, skipping message...$(tput setaf 7)"
+							#Print both values for debugging
+							echo "Calculated Hash:$calcHashValue, Received Hash:$msgHash"
+						fi
+						#Regardless of hash value we forward information to all neigboors, except to the node that send or create link message...
+						for out in "${plans[@]}"; do
+							outd=${out:0}
+							if [ "$msgOrigin" == "$outd" ] || [ "$msgSentFrom" == "$outd" ] || [ "$nodeId" == "$outd" ]; then
+								#echo "Skipping sending message to ourself or to the msg source node:$msgOrigin that sent us this message..."
+								a=0
+							else
+								echo "$(tput setaf 5)Forwarding message[RHash:$msgHash,Origin:$msgOrigin,From:$msgSentFrom,To:$outd,NodeA:$nodeA,NodeB:$nodeB,ExpireTime:$msgExipreTime]$(tput setaf 7)"
+								bpsourceForwardCommand="bpsource ipn:$out.$serviceNr \"$msgHash 1 c $msgExipreTime $msgOrigin $nodeId $nodeA $nodeB\" -t$bundleTTL"
+								#echo $bpsourceForwardCommand
+								eval $bpsourceForwardCommand >/dev/null
+							fi
+						done
+
+					else
+						if [[ "${cmdarray[2]}" == "m" ]]; then
+							msgExipreTime=${cmdarray[3]}
+							msgOrigin=${cmdarray[4]}
+							msgSentFrom=${cmdarray[5]}
+							#The metadata includes the rest of the cmdarray elements
+							metadatareceived=${cmdarray[@]:6}
+							##hashValue=$(hashString "1 m $expireTime $nodeId $nodemetadata") #Note, we do not include From node in the hash as it get changed through the network
+							calcHashValue=$(hashString "1 m $msgExipreTime $msgOrigin $metadatareceived") #Note, we do not include From node in the hash as it get changed through the network
+
+							# Remove the line that assigns the value to the unused variable
+							echo "$(tput setaf 2)Node Metadata received[RHash:$msgHash,msgExipreTime:$msgExipreTime,Origin:$msgOrigin,From:$msgSentFrom,Node Metadata:$metadatareceived], updating local metadata list...$(tput setaf 7)"
+							if [[ "$msgHash" == "$calcHashValue" ]]; then
+								echo "Hash values match, updating ION..."
+
+								#Update the local nodesmetadata.txt file with the received metadata. The file format is: "nodeId:metadata". If the node is not in the file, add it, if it is, update the metadata.
+								if [ -f "nodesmetadata.txt" ]; then
+									echo "Nodes metadata file exists, reading the previous metadata list..."
+									readarray -t prevmetadata < nodesmetadata.txt
+									#Check if the node is in the list
+									nodefound=false
+									for i in "${prevmetadata[@]}"; do
+										if [[ $i == *"$msgOrigin"* ]]; then
+											nodefound=true
+											echo "Node found in the metadata list, updating the metadata..."
+											#Update the metadata
+											sed -i "s|$msgOrigin:.*|$msgOrigin:$metadatareceived|" nodesmetadata.txt
+										fi
+									done
+									if [ "$nodefound" = false ]; then
+										echo "Node not found in the metadata list, adding the node..."
+										echo "$msgOrigin:$metadatareceived" >> nodesmetadata.txt
+									fi
+								else
+									echo "Nodes metadata file does not exist, creating the metadata list file..."
+									echo "$msgOrigin:$metadatareceived" >> nodesmetadata.txt
+								fi
+
+							else
+								echo "$(tput setaf 1)Hash values do not match, skipping message...$(tput setaf 7)"
+								#Print both values for debugging
+								echo "Calculated Hash:$calcHashValue, Received Hash:$msgHash"
+							fi
+							#echo "We forward information to all neigboors, except to the node that send or create link message..."
+							for out in "${plans[@]}"; do
+								outd=${out:0}
+								if [ "$msgOrigin" == "$outd" ] || [ "$msgSentFrom" == "$outd" ] || [ "$nodeId" == "$outd" ]; then
+									#echo "Skipping sending message to ourself or to the msg source node:$msgOrigin that sent us this message..."
+									a=0
+								else
+									echo "$(tput setaf 5)Forwarding Metadata[Origin:$msgOrigin,From:$msgSentFrom,To:$outd,Metadata:$metadatareceived]$(tput setaf 7)"
+									bpsourceForwardCommand="bpsource ipn:$out.$serviceNr \"$msgHash 1 m $msgExipreTime $msgOrigin $nodeId $metadatareceived \" -t$bundleTTL"
+									#echo $bpsourceForwardCommand
+									eval $bpsourceForwardCommand >/dev/null
+								fi
+							done
+						else
+							echo "Unknown message received!"
+						fi
+					fi
+				fi
+			else
+				echo "$(tput setaf 1)Aready processed message, skipping...$(tput setaf 7)"
+			fi
 		fi
-	#else
-	#	echo "Unknown message received!"
-	fi
-
-
-
-
-
-	done 
+	done
 
 	#Clear the capture pipe
-    	>$capturePipe
-
+	>$capturePipe
 }
 
 #Functions calls ipnadmin to get the list of contacts. The output that is parsed is in the form of: "From  2024/06/19-21:52:40 to  2035/11/16-13:52:39 the xmit rate from node 268484800 to node 268484801 is     100000 bytes/sec, confidence 1.000000, regions 1 and 0." The function parses every line and creates three list that include numbers from first node, second node and the time difference between two dates in seconds.
@@ -326,7 +373,7 @@ function getcontacts {
 #		echo ">$line"
 #	  done
 #	fi
-	echo "$(tput setaf 6)Number of contacts: $(echo "$contline" | wc -l)"
+	echo "$(tput setaf 6)Contact graph:"
 	#Loop through the list of contacts strings
 	for contline in "${contline[@]}"; do
 		if [ -n "$contline" ]; then

@@ -18,7 +18,7 @@ if [ -f "dtnex.conf" ]; then
 	source dtnex.conf
 fi
 
-echo "Starting a DTNEX script, author: Samo Grasic (samo@grasic.net), v0.6..."
+echo "Starting a DTNEX script, author: Samo Grasic (samo@grasic.net), v0.7..."
 
 ###Default settings
 serviceNr=12160 #Do not change
@@ -153,37 +153,46 @@ function getplanlist {
 function exchagnewithneigboors {
 	echo "Exchanging messages with configured plans:"
 	currentTimestamp=$(date -u +%s)
-	expireTime=$((currentTimestamp + contactLifetime +contactTimetolerance))
+	expireTime=$((currentTimestamp + contactLifetime + contactTimetolerance))
 	#Fromat expiretime to be in the format of: yyyy/mm/dd-hh:mm:ss
 	expireTimeString=$(date -u -d @$expireTime +"%Y/%m/%d-%H:%M:%S")
 	#echo "Exipre Time:$expireTime"
 	for i in "${plans[@]}"; do
-		plan=${i:0}
-		if [[ "$nodeId" == "$plan" ]]; then
-			echo "Skipping local loopback plan"
-		else
-			hashValue=$(hashString "1 c $expireTime $nodeId $nodeId $plan") #Note, we do not include From node in the hash as it get changed through the network
-			echo "$(tput setaf 3)Messaging own plan to node [hash:$hashValue,ExpireTime:$expireTime,Origin:$nodeId, From:$nodeId, To:$plan, About:$nodeId]$(tput setaf 7)"
-			bpsourceCommand="bpsource ipn:$plan.$serviceNr \"$hashValue 1 c $expireTime $nodeId $nodeId $nodeId $plan\" -t$bundleTTL"
-			echo $bpsourceCommand
-			eval $bpsourceCommand
-		fi
+		for j in "${plans[@]}"; do
+			plan=${i:0}
+			neighbourId=${j:0}
+			if [[ "$neighbourId" == "$plan" ]]; then
+				echo "Skipping local loopback plan"
+			else
+				hashValue=$(hashString "1 c $expireTime $nodeId $nodeId $plan") #Note, we do not include From node in the hash as it get changed through the network
+				echo "$(tput setaf 3)Messaging own plan to neighbour:$neighbourId [hash:$hashValue,ExpireTime:$expireTime,Origin:$nodeId, From:$nodeId, NodeA:$nodeId, NodeB:$plan]$(tput setaf 7)"
+				bpsourceCommand="bpsource ipn:$neighbourId.$serviceNr \"$hashValue 1 c $expireTime $nodeId $nodeId $nodeId $plan\" -t$bundleTTL"
+				echo $bpsourceCommand
+				eval $bpsourceCommand
+			fi
+		done
 	done
+	
 	if [ -n "$nodemetadata" ]; then
 		#Trim nodemetadata to 30 characters
 		nodemetadata=${nodemetadata:0:32}
 		echo "Exchanging metadata with configured plans:"
 		for i in "${plans[@]}"; do
+				for j in "${plans[@]}"; do
+
 			plan=${i:0}
-			if [[ "$nodeId" == "$plan" ]]; then
+						neighbourId=${j:0}
+
+			if [[ "$neighbourId" == "$plan" ]]; then
 				echo "Skipping local loopback plan"
 			else
 				hashValue=$(hashString "1 m $expireTime $nodeId $nodemetadata") #Note, we do not include From node in the hash as it get changed through the network
-				echo "$(tput setaf 3)Messaging metadata to node [hash:$hashValue,Origin:$nodeId, To Node:$plan, Metadata:$nodemetadata]$(tput setaf 7)"
-				bpsourceCommand="bpsource ipn:$plan.$serviceNr \"$hashValue 1 m $expireTime $nodeId $nodeId $nodemetadata\" -t$bundleTTL"
+				echo "$(tput setaf 3)Messaging metadata to neighbour:$neighbourId [hash:$hashValue,Origin:$nodeId, To Node:$plan, Metadata:$nodemetadata]$(tput setaf 7)"
+				bpsourceCommand="bpsource ipn:$neighbourId.$serviceNr \"$hashValue 1 m $expireTime $nodeId $nodeId $nodemetadata\" -t$bundleTTL"
    			echo $bpsourceCommand
 				eval $bpsourceCommand
 			fi
+			done
 		done
 	fi
 }

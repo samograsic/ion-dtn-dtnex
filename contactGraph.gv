@@ -1,22 +1,42 @@
 digraph G { layout=neato; overlap=false;
-"ipn:268484803" [label=< <FONT POINT-SIZE="14" FACE="Arial" COLOR="darkred"><B>ipn:268484803</B></FONT><BR/><FONT POINT-SIZE="10" FACE="Arial" COLOR="blue">EEE-LoRaGW<br/>samo&#64;grasic&#46;net<br/>Slove</FONT>>];
-"ipn:268484801" [label=< <FONT POINT-SIZE="14" FACE="Arial" COLOR="darkred"><B>ipn:268484801</B></FONT><BR/><FONT POINT-SIZE="10" FACE="Arial" COLOR="blue">Heimlauta<br/>&#64;grasic&#46;net<br/>Sweden</FONT>>];
-"ipn:268484802" [label=< <FONT POINT-SIZE="14" FACE="Arial" COLOR="darkred"><B>ipn:268484802</B></FONT><BR/><FONT POINT-SIZE="10" FACE="Arial" COLOR="blue">PI3Node<br/>samo&#64;grasic&#46;net<br/>Slovenia</FONT>>];
-"ipn:268501000" [label=< <FONT POINT-SIZE="14" FACE="Arial" COLOR="darkred"><B>ipn:268501000</B></FONT><BR/><FONT POINT-SIZE="10" FACE="Arial" COLOR="blue">MEIS<br/>info&#64;meis&#46;si<br/>Slovenia</FONT>>];
+"ipn:268484801" [label=< <FONT POINT-SIZE="14" FACE="Arial" COLOR="darkred"><B>ipn:268484801</B></FONT><BR/><FONT POINT-SIZE="10" FACE="Arial" COLOR="blue">LoRaGW433<br/>samo&#64;grasic&#46;net<br/>Sweden</FONT>>];
 "ipn:268484804" [label=< <FONT POINT-SIZE="14" FACE="Arial" COLOR="darkred"><B>ipn:268484804</B></FONT><BR/><FONT POINT-SIZE="10" FACE="Arial" COLOR="blue">BackupNode<br/>&#64;LateLab<br/>Netherlands</FONT>>];
+"ipn:268484802" [label=< <FONT POINT-SIZE="14" FACE="Arial" COLOR="darkred"><B>ipn:268484802</B></FONT><BR/><FONT POINT-SIZE="10" FACE="Arial" COLOR="blue">Pi5Node<br/>samo&#64;grasic&#46;net<br/>Slovenia</FONT>>];
+"ipn:268484803" [label=< <FONT POINT-SIZE="14" FACE="Arial" COLOR="darkred"><B>ipn:268484803</B></FONT><BR/><FONT POINT-SIZE="10" FACE="Arial" COLOR="blue">EEE-LoRaGW<br/>samo&#64;grasic&#46;net<br/>Slovenia</FONT>>];
+"ipn:268501000" [label=< <FONT POINT-SIZE="14" FACE="Arial" COLOR="darkred"><B>ipn:268501000</B></FONT><BR/><FONT POINT-SIZE="10" FACE="Arial" COLOR="blue">MEIS<br/>info&#64;meis&#46;si<br/>Slovenia</FONT>>];
+"ipn:268501104" [label=< <FONT POINT-SIZE="14" FACE="Arial" COLOR="darkred"><B>ipn:268501104</B></FONT><BR/><FONT POINT-SIZE="10" FACE="Arial" COLOR="blue">Cebelca<br/>info&#64;meis&#46;si<br/>Slovenia</FONT>>];
+"ipn:268484808" [label=< <FONT POINT-SIZE="14" FACE="Arial" COLOR="darkred"><B>ipn:268484808</B></FONT><BR/><FONT POINT-SIZE="10" FACE="Arial" COLOR="blue">ICTP_MarconiLab<br/>Italy</FONT>>];
+"ipn:268451900" [label=< <FONT POINT-SIZE="14" FACE="Arial" COLOR="darkred"><B>ipn:268451900</B></FONT><BR/><FONT POINT-SIZE="10" FACE="Arial" COLOR="blue">SpatiamGW<br/>ipnsignet&#64;spatiam&#46;com<br/>USA</FONT>>];
+"ipn:268484805" [label=< <FONT POINT-SIZE="14" FACE="Arial" COLOR="darkred"><B>ipn:268484805</B></FONT><BR/><FONT POINT-SIZE="10" FACE="Arial" COLOR="blue">WIDE<br/> space&#64;wide&#46;ad&#46;jp<br/> Japan</FONT>>];
 "ipn:268484800" [label=< <FONT POINT-SIZE="14" FACE="Arial" COLOR="darkred"><B>ipn:268484800</B></FONT><BR/><FONT POINT-SIZE="10" FACE="Arial" COLOR="blue">OpenIPN Node<br/>samo&#64;grasic&#46;net<br/>Swe</FONT>>];
-"ipn:268435600" -> "ipn:268484800"
-"ipn:268484800" -> "ipn:268435600"
+"ipn:268435465" -> "ipn:268484802"
+"ipn:268435466" -> "ipn:268484802"
+"ipn:268451900" -> "ipn:268484800"
+"ipn:268451900" -> "ipn:268484802"
+"ipn:268484800" -> "ipn:268451900"
 "ipn:268484800" -> "ipn:268484800"
 "ipn:268484800" -> "ipn:268484800"
 "ipn:268484800" -> "ipn:268484801"
 "ipn:268484800" -> "ipn:268484802"
 "ipn:268484800" -> "ipn:268484804"
+"ipn:268484800" -> "ipn:268484805"
+"ipn:268484800" -> "ipn:268484807"
 "ipn:268484800" -> "ipn:268501000"
 "ipn:268484801" -> "ipn:268484800"
+"ipn:268484802" -> "ipn:268435465"
+"ipn:268484802" -> "ipn:268435466"
+"ipn:268484802" -> "ipn:268451900"
 "ipn:268484802" -> "ipn:268484800"
-"ipn:268484802" -> "ipn:268484803"
-"ipn:268484803" -> "ipn:268484802"
+"ipn:268484802" -> "ipn:268484804"
+"ipn:268484802" -> "ipn:268484805"
+"ipn:268484802" -> "ipn:268484807"
+"ipn:268484802" -> "ipn:268484808"
 "ipn:268484804" -> "ipn:268484800"
+"ipn:268484804" -> "ipn:268484802"
+"ipn:268484805" -> "ipn:268484800"
+"ipn:268484805" -> "ipn:268484802"
+"ipn:268484807" -> "ipn:268484800"
+"ipn:268484807" -> "ipn:268484802"
+"ipn:268484808" -> "ipn:268484802"
 "ipn:268501000" -> "ipn:268484800"
-labelloc="t"; label="IPNSIG's DTN Network Graph, Updated:2024-07-09_23-12-01"}
+labelloc="t"; label="IPNSIG's DTN Network Graph, Updated:2024-11-23_02-35-36"}

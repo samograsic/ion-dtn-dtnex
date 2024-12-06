@@ -161,7 +161,7 @@ function exchagnewithneigboors {
 		for j in "${plans[@]}"; do
 			plan=${i:0}
 			neighbourId=${j:0}
-			if [[ "$neighbourId" == "$plan" ]]; then
+			if [[ "$neighbourId" == "$nodeId" ]]; then
 				echo "Skipping local loopback plan"
 			else
 				hashValue=$(hashString "1 c $expireTime $nodeId $nodeId $plan") #Note, we do not include From node in the hash as it get changed through the network
@@ -183,7 +183,7 @@ function exchagnewithneigboors {
 			plan=${i:0}
 						neighbourId=${j:0}
 
-			if [[ "$neighbourId" == "$plan" ]]; then
+			if [[ "$neighbourId" == "$nodeId" ]]; then
 				echo "Skipping local loopback plan"
 			else
 				hashValue=$(hashString "1 m $expireTime $nodeId $nodemetadata") #Note, we do not include From node in the hash as it get changed through the network

@@ -1,9 +1,10 @@
 268484801:LoRaGW433,samo@grasic.net,Sweden
 268484804:BackupNode,@LateLab,Netherlands
-268484802:Pi5Node,samo@grasic.net,Slovenia
+268484802:PI3Node,samo@grasic.net,Slovenia
 268484803:EEE-LoRaGW,samo@grasic.net,Slovenia
 268501000:MEIS,info@meis.si,Slovenia
 268501104:Cebelca,info@meis.si,Slovenia
 268484808:ICTP_MarconiLab,Italy
 268451900:SpatiamGW,ipnsignet@spatiam.com,USA
 268484805:WIDE, space@wide.ad.jp, Japan
+268484612:EEE-LoRaGW,samo@grasic.net,Swede

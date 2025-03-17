@@ -1,0 +1,17 @@
+# Build artifacts
+*.o
+dtnexc
+test_receiver
+
+# Development backup files
+dev/
+*.bak
+*.backup
+*.patch
+
+# Logs
+*.log
+work.log
+
+# Runtime files
+nodesmetadata.txt

@@ -117,9 +117,12 @@ void processContactMessage(DtnexConfig *config, const char *msgHash, const char 
 void processMetadataMessage(DtnexConfig *config, const char *msgHash, const char *msgBuffer, 
                           time_t msgExpireTime, unsigned long msgOrigin, unsigned long msgSentFrom);
 void updateNodeMetadata(DtnexConfig *config, unsigned long nodeId, const char *metadata);
-void forwardContactMessage(DtnexConfig *config, const char *msgHash, const char *msgType, 
+void forwardContactMessage(DtnexConfig *config, const char *msgHash, 
                          time_t msgExpireTime, unsigned long msgOrigin, unsigned long msgSentFrom, 
                          unsigned long nodeA, unsigned long nodeB, Plan *plans, int planCount);
+void forwardMetadataMessage(DtnexConfig *config, const char *msgHash, 
+                           time_t msgExpireTime, unsigned long msgOrigin, unsigned long msgSentFrom, 
+                           const char *metadata, Plan *plans, int planCount);
 void checkForIncomingBundles(DtnexConfig *config);
 void dtnex_log(const char *format, ...);
 

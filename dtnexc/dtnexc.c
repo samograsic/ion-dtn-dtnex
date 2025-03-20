@@ -136,7 +136,7 @@ void loadConfig(DtnexConfig *config) {
         fclose(configFile);
         dtnex_log("Configuration loaded from dtnex.conf");
     } else {
-        dtnex_log("No dtnex.conf found, using default settings (no metadata exchange)");
+        dtnex_log("No dtnex.conf found, using f settings (no metadata exchange)");
     }
 }
 
@@ -455,33 +455,7 @@ int sendBundle(DtnexConfig *config, char *destEid, char *message, int ttl) {
     strncpy(messageCopy, message, MAX_LINE_LENGTH-1);
     messageCopy[MAX_LINE_LENGTH-1] = '\0';
     
-    // Extract hash and other info if possible
-    char *token = strtok(messageCopy, " ");
-    if (token) {
-        strncpy(hashValue, token, sizeof(hashValue)-1); // First token is hash
-        token = strtok(NULL, " "); // Version
-        if (token && strcmp(token, "1") == 0) {
-            token = strtok(NULL, " "); // Message type
-            if (token) {
-                strncpy(msgType, token, sizeof(msgType)-1);
-                token = strtok(NULL, " "); // ExpireTime
-                if (token) {
-                    token = strtok(NULL, " "); // Origin node
-                    if (token) originNode = strtoul(token, NULL, 10);
-                    token = strtok(NULL, " "); // From node
-                    if (token) fromNode = strtoul(token, NULL, 10);
-                    if (strcmp(msgType, "c") == 0) {
-                        token = strtok(NULL, " "); // NodeA
-                        if (token) {
-                            token = strtok(NULL, " "); // NodeB
-                            if (token) toNode = strtoul(token, NULL, 10);
-                        }
-                    }
-                }
-            }
-        }
-    }
-    
+  
     // Determine destination node number from EID if possible
     unsigned long destNode = 0;
     if (destEid && strncmp(destEid, "ipn:", 4) == 0) {
@@ -498,16 +472,6 @@ int sendBundle(DtnexConfig *config, char *destEid, char *message, int ttl) {
         // Metadata message
         dtnex_log("\033[33m[SEND] To %s - Metadata: Origin=%lu, From=%lu, Hash=%s\033[0m", 
             destEid, originNode, fromNode, hashValue);
-    } else {
-        // Unknown message type - use previous format
-        if (strlen(message) > 60) {
-            char truncatedMsg[64];
-            strncpy(truncatedMsg, message, 60);
-            truncatedMsg[60] = '\0';
-            dtnex_log("\033[33m[SEND] To %s: \"%s...\"\033[0m", destEid, truncatedMsg);
-        } else {
-            dtnex_log("\033[33m[SEND] To %s: \"%s\"\033[0m", destEid, message);
-        }
     }
     
     // Check if destination EID is valid
@@ -708,25 +672,14 @@ void exchangeWithNeighbors(DtnexConfig *config, Plan *plans, int planCount) {
                         continue;
                     }
                     
-                    // CRITICAL FIX: Create message EXACTLY as bash does
-                    // In bash script lines 268-269:
                     // hashString="1 m $expireTime $nodeId $cleanNodeMetadata"
                     // hashValue=$(hashString "$hashString")
                     // bpsourceCommand="bpsource ipn:$neighbourId.$serviceNr \"$hashValue $hashString\" -t$bundleTTL"
                     
                     // Create the hash string exactly as bash does (1 m time nodeId metadata)
                     char hashInputStr[MAX_LINE_LENGTH];
-                    
-                    // Special handling for empty metadata to match bash behavior
-                    if (strlen(config->nodemetadata) == 0) {
-                        // For empty metadata, add a trailing space explicitly 
-                        snprintf(hashInputStr, MAX_LINE_LENGTH, "1 m %ld %lu ", 
-                                expireTime, config->nodeId);
-                    } else {
-                        // Format exactly like bash does at line 268
-                        snprintf(hashInputStr, MAX_LINE_LENGTH, "1 m %ld %lu %s", 
+                    snprintf(hashInputStr, MAX_LINE_LENGTH, "1 m %ld %lu %s", 
                                 expireTime, config->nodeId, config->nodemetadata);
-                    }
                     
                     // Calculate hash value based on hash string
                     dtnex_log("\033[33m[DEBUG] Hash input string: \"%s\" with key: \"%s\"", 
@@ -763,9 +716,9 @@ void exchangeWithNeighbors(DtnexConfig *config, Plan *plans, int planCount) {
 }
 
 /**
- * Forward a received contact or metadata message to other neighbors
+ * Forward a received contact message to other neighbors
  */
-void forwardContactMessage(DtnexConfig *config, const char *msgHash, const char *msgType, 
+void forwardContactMessage(DtnexConfig *config, const char *msgHash, 
                          time_t msgExpireTime, unsigned long msgOrigin, unsigned long msgSentFrom, 
                          unsigned long nodeA, unsigned long nodeB, Plan *plans, int planCount) {
     int i;
@@ -774,23 +727,18 @@ void forwardContactMessage(DtnexConfig *config, const char *msgHash, const char 
     
     // Safety check for parameters
     if (!msgHash) {
-        dtnex_log("Error: Missing hash for message forwarding");
-        return;
-    }
-    
-    if (!msgType) {
-        dtnex_log("Error: Missing message type for forwarding");
+        dtnex_log("\033[31m[ERROR] Missing hash for contact message forwarding\033[0m");
         return;
     }
     
     if (!plans) {
-        dtnex_log("Error: Missing plans list for forwarding");
+        dtnex_log("\033[31m[ERROR] Missing plans list for contact forwarding\033[0m");
         return;
     }
     
     if (planCount <= 0) {
         // This is normal when running with no neighbors
-        dtnex_log("No plans available for forwarding");
+        dtnex_log("\033[33m[INFO] No plans available for contact forwarding\033[0m");
         return;
     }
     
@@ -802,66 +750,82 @@ void forwardContactMessage(DtnexConfig *config, const char *msgHash, const char 
             continue;
         }
         
-        // Create the message content
-        if (strcmp(msgType, "c") == 0) {
-            // Contact message
-            dtnex_log("\033[34m[FORWARD] Contact: Origin=%lu, To=%lu, Link=%lu↔%lu\033[0m",
-                    msgOrigin, outd, nodeA, nodeB);
-            
-            snprintf(message, MAX_LINE_LENGTH, "%s 1 c %ld %lu %lu %lu %lu", 
-                    msgHash, msgExpireTime, msgOrigin, config->nodeId, nodeA, nodeB);
-            message[MAX_LINE_LENGTH-1] = '\0'; // Safety null termination
-            
-        } else if (strcmp(msgType, "m") == 0) {
-            // Metadata message
-            
-            // For metadata messages, nodeA is the node the metadata is about (origin node)
-            dtnex_log("\033[34m[FORWARD] Metadata: Origin=%lu, To=%lu\033[0m", msgOrigin, outd);
-            
-            // Get metadata content - check if we have it in our list
-            const char *metadata = NULL;
-            
-            // First try to find the metadata in our list by node ID
-            for (int j = 0; j < nodeMetadataCount; j++) {
-                if (nodeMetadataList[j].nodeId == msgOrigin) {
-                    metadata = nodeMetadataList[j].metadata;
-                    break;
-                }
-            }
-            
-            // If not found in our list, check if it was passed as nodeB parameter (void* cast to string)
-            if (metadata == NULL && nodeB != 0) {
-                metadata = (const char*)nodeB;
-            }
-            
-            // CRITICAL: Format EXACTLY as bash does
-            // In bash script, the message is sent as "hashValue hashString"
-            // where hashString is "1 m expireTime nodeId metadata"
-            
-            // First create the hashString part
-            char hashInputStr[MAX_LINE_LENGTH];
-            
-            if (metadata == NULL || strlen(metadata) == 0) {
-                // No metadata or empty metadata case - note the trailing space
-                snprintf(hashInputStr, MAX_LINE_LENGTH, "1 m %ld %lu ", 
-                        msgExpireTime, msgOrigin);
-            } else {
-                // With metadata (from our list or passed in)
-                snprintf(hashInputStr, MAX_LINE_LENGTH, "1 m %ld %lu %s", 
-                        msgExpireTime, msgOrigin, metadata);
-            }
-            
-            // When forwarding, we should just use the same hash as received
-            // as it's already been verified
-            snprintf(message, MAX_LINE_LENGTH, "%s %s", 
-                     msgHash, hashInputStr);
-            
-            dtnex_log("\033[33m[DEBUG] Forwarding metadata with message: \"%s\"\033[0m", message);
-            message[MAX_LINE_LENGTH-1] = '\0'; // Safety null termination
-        } else {
-            dtnex_log("Unknown message type: %s", msgType);
-            continue;  // Unknown message type
+        // Contact message
+        dtnex_log("\033[34m[FORWARD] Contact: Origin=%lu, To=%lu, Link=%lu↔%lu\033[0m",
+                msgOrigin, outd, nodeA, nodeB);
+        
+        // Format exactly as in the bash script (line 399): "msgHash forwardHash"
+        // where forwardHash is "1 c $msgExipreTime $msgOrigin $nodeId $nodeA $nodeB"
+        snprintf(message, MAX_LINE_LENGTH, "%s 1 c %ld %lu %lu %lu %lu", 
+                msgHash, msgExpireTime, msgOrigin, config->nodeId, nodeA, nodeB);
+        message[MAX_LINE_LENGTH-1] = '\0'; // Safety null termination
+        
+        // Create the destination EID
+        snprintf(destEid, MAX_EID_LENGTH, "ipn:%lu.%s", outd, config->serviceNr);
+        destEid[MAX_EID_LENGTH-1] = '\0'; // Safety null termination
+        
+        // Send the bundle using ION BP API
+        sendBundle(config, destEid, message, config->bundleTTL);
+    }
+}
+
+/**
+ * Forward a received metadata message to other neighbors
+ * This is a separate function to handle metadata specifically, as its format differs from contact messages
+ */
+void forwardMetadataMessage(DtnexConfig *config, const char *msgHash, 
+                           time_t msgExpireTime, unsigned long msgOrigin, unsigned long msgSentFrom, 
+                           const char *metadata, Plan *plans, int planCount) {
+    int i;
+    char message[MAX_LINE_LENGTH];
+    char destEid[MAX_EID_LENGTH];
+    
+    // Safety check for parameters
+    if (!msgHash) {
+        dtnex_log("\033[31m[ERROR] Missing hash for metadata message forwarding\033[0m");
+        return;
+    }
+    
+    if (!metadata || strlen(metadata) == 0) {
+        dtnex_log("\033[31m[ERROR] Missing or empty metadata for forwarding\033[0m");
+        return;
+    }
+    
+    if (!plans) {
+        dtnex_log("\033[31m[ERROR] Missing plans list for metadata forwarding\033[0m");
+        return;
+    }
+    
+    if (planCount <= 0) {
+        // This is normal when running with no neighbors
+        dtnex_log("\033[33m[INFO] No plans available for metadata forwarding\033[0m");
+        return;
+    }
+    
+    for (i = 0; i < planCount; i++) {
+        unsigned long outd = plans[i].planId;
+        
+        // Skip sending message to ourselves or to the source node
+        if (msgOrigin == outd || msgSentFrom == outd || config->nodeId == outd) {
+            continue;
         }
+        
+        // Format for metadata message forwarding
+        dtnex_log("\033[34m[FORWARD] Metadata: Origin=%lu, From=%lu, To=%lu\033[0m", 
+                msgOrigin, config->nodeId, outd);
+        
+        // Create the forward hash string exactly as in bash script (line 461)
+        // forwardHash="1 m $msgExipreTime $msgOrigin $nodeId $metadatareceived"
+        char forwardHash[MAX_LINE_LENGTH];
+        snprintf(forwardHash, MAX_LINE_LENGTH, "1 m %ld %lu %lu %s", 
+                msgExpireTime, msgOrigin, config->nodeId, metadata);
+        
+        // Full message: Original hash + forwardHash
+        // Line 462: bpsourceForwardCommand="bpsource ipn:$outd.$serviceNr \"$msgHash $forwardHash\" -t$bundleTTL"
+        snprintf(message, MAX_LINE_LENGTH, "%s %s", msgHash, forwardHash);
+        message[MAX_LINE_LENGTH-1] = '\0'; // Safety null termination
+        
+        dtnex_log("\033[33m[DEBUG] Forwarding metadata with message: \"%s\"\033[0m", message);
         
         // Create the destination EID
         snprintf(destEid, MAX_EID_LENGTH, "ipn:%lu.%s", outd, config->serviceNr);
@@ -896,9 +860,14 @@ void processContactMessage(DtnexConfig *config, const char *msgHash, const char 
         // Get current time
         time_t currentTime = time(NULL);
         
-        // Format current time and expire time for ION
-        struct tm *timeinfo;
+        // Use time values directly, avoiding timezone issues when parsing/converting
+        // ION expects epoch time values directly
+        time_t fromTime = currentTime;
+        time_t toTime = msgExpireTime; // Use expire time directly
+        
+        // Format times for logging only
         char currentTimeStr[32], expireTimeStr[32];
+        struct tm *timeinfo;
         
         timeinfo = gmtime(&currentTime);
         strftime(currentTimeStr, sizeof(currentTimeStr), "%Y/%m/%d-%H:%M:%S", timeinfo);
@@ -906,41 +875,53 @@ void processContactMessage(DtnexConfig *config, const char *msgHash, const char 
         timeinfo = gmtime(&msgExpireTime);
         strftime(expireTimeStr, sizeof(expireTimeStr), "%Y/%m/%d-%H:%M:%S", timeinfo);
         
-        // Parse time strings to time_t (epoch time)
-        struct tm fromTm = {0};
-        struct tm toTm = {0};
-        
-        // Convert string times to struct tm
-        strptime(currentTimeStr, "%Y/%m/%d-%H:%M:%S", &fromTm);
-        strptime(expireTimeStr, "%Y/%m/%d-%H:%M:%S", &toTm);
-        
-        // Convert to epoch time
-        time_t fromTime = mktime(&fromTm);
-        time_t toTime = mktime(&toTm);
+        dtnex_log("\033[36m[DEBUG] Contact time: Current=%ld (%s) to Expire=%ld (%s)\033[0m", 
+                 fromTime, currentTimeStr, toTime, expireTimeStr);
         
         // The ION region number - typically 1
         uint32_t regionNbr = 1;
         PsmAddress cxaddr = 0;
         PsmAddress rxaddr = 0;
+        int result;
         
         // Add contact from nodeA to nodeB using RFX API
-        if (rfx_insert_contact(regionNbr, fromTime, toTime, nodeA, nodeB, 100000, 1.0, &cxaddr, 1) < 0) {
-            dtnex_log("\033[31m[ERROR] Failed to insert contact from %lu to %lu\033[0m", nodeA, nodeB);
+        result = rfx_insert_contact(regionNbr, fromTime, toTime, nodeA, nodeB, 100000, 1.0, &cxaddr, 1);
+        if (result < 0) {
+            dtnex_log("\033[31m[ERROR] Failed to insert contact from %lu to %lu (result=%d)\033[0m", nodeA, nodeB, result);
+        } else if (result > 0) {
+            dtnex_log("\033[33m[WARNING] User error when inserting contact from %lu to %lu (result=%d)\033[0m", nodeA, nodeB, result);
+        } else {
+            dtnex_log("\033[32m[SUCCESS] Added contact from %lu to %lu\033[0m", nodeA, nodeB);
         }
         
         // Add contact from nodeB to nodeA using RFX API
-        if (rfx_insert_contact(regionNbr, fromTime, toTime, nodeB, nodeA, 100000, 1.0, &cxaddr, 1) < 0) {
-            dtnex_log("\033[31m[ERROR] Failed to insert contact from %lu to %lu\033[0m", nodeB, nodeA);
+        result = rfx_insert_contact(regionNbr, fromTime, toTime, nodeB, nodeA, 100000, 1.0, &cxaddr, 1);
+        if (result < 0) {
+            dtnex_log("\033[31m[ERROR] Failed to insert contact from %lu to %lu (result=%d)\033[0m", nodeB, nodeA, result);
+        } else if (result > 0) {
+            dtnex_log("\033[33m[WARNING] User error when inserting contact from %lu to %lu (result=%d)\033[0m", nodeB, nodeA, result);
+        } else {
+            dtnex_log("\033[32m[SUCCESS] Added contact from %lu to %lu\033[0m", nodeB, nodeA);
         }
         
         // Add range from nodeA to nodeB using RFX API
-        if (rfx_insert_range(fromTime, toTime, nodeA, nodeB, 1, &rxaddr, 1) < 0) {
-            dtnex_log("\033[31m[ERROR] Failed to insert range from %lu to %lu\033[0m", nodeA, nodeB);
+        result = rfx_insert_range(fromTime, toTime, nodeA, nodeB, 1, &rxaddr, 1);
+        if (result < 0) {
+            dtnex_log("\033[31m[ERROR] Failed to insert range from %lu to %lu (result=%d)\033[0m", nodeA, nodeB, result);
+        } else if (result > 0) {
+            dtnex_log("\033[33m[WARNING] User error when inserting range from %lu to %lu (result=%d)\033[0m", nodeA, nodeB, result);
+        } else {
+            dtnex_log("\033[32m[SUCCESS] Added range from %lu to %lu\033[0m", nodeA, nodeB);
         }
         
         // Add range from nodeB to nodeA using RFX API
-        if (rfx_insert_range(fromTime, toTime, nodeB, nodeA, 1, &rxaddr, 1) < 0) {
-            dtnex_log("\033[31m[ERROR] Failed to insert range from %lu to %lu\033[0m", nodeB, nodeA);
+        result = rfx_insert_range(fromTime, toTime, nodeB, nodeA, 1, &rxaddr, 1);
+        if (result < 0) {
+            dtnex_log("\033[31m[ERROR] Failed to insert range from %lu to %lu (result=%d)\033[0m", nodeB, nodeA, result);
+        } else if (result > 0) {
+            dtnex_log("\033[33m[WARNING] User error when inserting range from %lu to %lu (result=%d)\033[0m", nodeB, nodeA, result);
+        } else {
+            dtnex_log("\033[32m[SUCCESS] Added range from %lu to %lu\033[0m", nodeB, nodeA);
         }
     } else {
         dtnex_log("\033[31m[ERROR] Contact hash verification failed - Calculated:%s != Received:%s\033[0m", 
@@ -951,7 +932,7 @@ void processContactMessage(DtnexConfig *config, const char *msgHash, const char 
     Plan plans[MAX_PLANS];
     int planCount = 0;
     getplanlist(config, plans, &planCount);
-    forwardContactMessage(config, msgHash, "c", msgExpireTime, msgOrigin, msgSentFrom, nodeA, nodeB, plans, planCount);
+    forwardContactMessage(config, msgHash, msgExpireTime, msgOrigin, msgSentFrom, nodeA, nodeB, plans, planCount);
 }
 
 /**
@@ -965,8 +946,9 @@ void processMetadataMessage(DtnexConfig *config, const char *msgHash, const char
     // Use a larger buffer for metadata extraction to avoid truncation
     char metadata[MAX_LINE_LENGTH] = {0};
     
-    // The metadata starts after hash, version, type, expireTime, origin, and from nodes
-    // Parse the message using strtok for more accurate extraction
+    // The metadata starts after hash, version, type, expireTime, origin, and either:
+    // - from node (for direct messages, structure: hash 1 m expireTime origin from metadata)
+    // - or from node and original metadata node (for forwarded messages, structure: hash 1 m expireTime origin from metadatanode metadata)
     char msgCopy[MAX_LINE_LENGTH];
     strncpy(msgCopy, msgBuffer, sizeof(msgCopy)-1);
     msgCopy[sizeof(msgCopy)-1] = '\0';
@@ -987,19 +969,45 @@ void processMetadataMessage(DtnexConfig *config, const char *msgHash, const char
     token = strtok(NULL, " ");  // Origin
     if (!token) return;
     
-    token = strtok(NULL, " ");  // From
+    token = strtok(NULL, " ");  // From or metadata
     if (!token) return;
     
-    // Everything after this is metadata - get the rest of the string
-    token = strtok(NULL, "");  // Rest of the string = metadata
+    // Check if the next token is a number (would be fromNode, meaning this is a forwarded message)
+    // or if it's not a number (meaning it's already the metadata string)
+    char *nextToken = strtok(NULL, "");
     
-    if (token) {
-        // Copy the full metadata string
+    if (nextToken) {
+        // We have more tokens - this could be a forwarded message
+        // Check if the next token starts with a numeric value
+        if (isdigit(nextToken[0])) {
+            // This is likely a forwarded message with format: "hash 1 m expireTime origin from node metadata"
+            // Extract the node ID and then get the metadata after it
+            char *forwardNode = token;  // Save the from node
+            
+            // The next token is metadata node, look for the metadata itself
+            token = strtok(nextToken, " ");  // Node ID
+            if (token) {
+                // Get the rest of the string as metadata
+                token = strtok(NULL, "");
+                if (token) {
+                    strncpy(metadata, token, sizeof(metadata) - 1);
+                }
+            }
+        } else {
+            // It's a direct message (no additional node between from and metadata)
+            // The nextToken itself is the entire metadata string
+            strncpy(metadata, nextToken, sizeof(metadata) - 1);
+        }
+    } else {
+        // No metadata found beyond the from node - possibly a malformed message
+        // The token itself might be the metadata (unlikely but possible)
         strncpy(metadata, token, sizeof(metadata) - 1);
-        metadata[sizeof(metadata) - 1] = '\0';
-        dtnex_log("\033[36m[DEBUG] Original metadata: \"%s\"\033[0m", token);
-        dtnex_log("\033[36m[DEBUG] Metadata extracted: \"%s\"\033[0m", metadata);
     }
+    
+    // Ensure null-termination
+    metadata[sizeof(metadata) - 1] = '\0';
+    
+    dtnex_log("\033[36m[DEBUG] Metadata extracted: \"%s\"\033[0m", metadata);
     
     // Show detailed metadata information 
     dtnex_log("\033[32m[PROCESS] Metadata Message Details:\033[0m");
@@ -1013,16 +1021,9 @@ void processMetadataMessage(DtnexConfig *config, const char *msgHash, const char
     char calcHash[20];
     char msgToHash[MAX_LINE_LENGTH];
     
-    // Format string exactly as in the bash script
-    // Note: bash does at line 268: hashString "1 m $expireTime $nodeId $cleanNodeMetadata"
-    // The bash script explicitly passes the nodeId (origin) and the metadata
-    if (strlen(metadata) == 0) {
-        // Special case for empty metadata
-        snprintf(msgToHash, MAX_LINE_LENGTH, "1 m %ld %lu ", msgExpireTime, msgOrigin);
-    } else {
-        // Normal case with non-empty metadata
-        snprintf(msgToHash, MAX_LINE_LENGTH, "1 m %ld %lu %s", msgExpireTime, msgOrigin, metadata);
-    }
+    // For hash verification, we don't include the "from" node (msgSentFrom)
+    // In the bash script (line 414), this is: hashString="1 m $msgExipreTime $msgOrigin $metadatareceived"
+    snprintf(msgToHash, MAX_LINE_LENGTH, "1 m %ld %lu %s", msgExpireTime, msgOrigin, metadata);
     
     dtnex_log("\033[33m[DEBUG] Calculating hash with: \"%s\"\033[0m", msgToHash);
     hashString(msgToHash, calcHash, config->presSharedNetworkKey);
@@ -1035,128 +1036,17 @@ void processMetadataMessage(DtnexConfig *config, const char *msgHash, const char
         dtnex_log("\033[31m[ERROR] Metadata hash verification failed - Calculated:%s, Received:%s\033[0m", 
               calcHash, msgHash);
         
-        // Testing: Let's try different formats to match the bash script
-        char testHash1[20], testHash2[20], testHash3[20];
-        
-        // Format 1: Try with origin node as sender (from the bash script behavior)
-        if (strlen(metadata) == 0) {
-            snprintf(msgToHash, MAX_LINE_LENGTH, "1 m %ld %lu ", msgExpireTime, msgOrigin);
-        } else {
-            snprintf(msgToHash, MAX_LINE_LENGTH, "1 m %ld %lu %s", msgExpireTime, msgOrigin, metadata);
-        }
-        hashString(msgToHash, testHash1, config->presSharedNetworkKey);
-        dtnex_log("\033[33m[TEST1] Format='1 m expireTime origin metadata', Hash=%s\033[0m", testHash1);
-        
-        // Format 2: Try with sender node - some implementations might use this
-        if (strlen(metadata) == 0) {
-            snprintf(msgToHash, MAX_LINE_LENGTH, "1 m %ld %lu ", msgExpireTime, msgSentFrom);
-        } else {
-            snprintf(msgToHash, MAX_LINE_LENGTH, "1 m %ld %lu %s", msgExpireTime, msgSentFrom, metadata);
-        }
-        hashString(msgToHash, testHash2, config->presSharedNetworkKey);
-        dtnex_log("\033[33m[TEST2] Format='1 m expireTime sender metadata', Hash=%s\033[0m", testHash2);
-        
-        // IMPORTANT: In bash, the message is sent as "$hashValue $hashString"
-        // where hashString is "1 m $expireTime $nodeId $metadata"
-        // So we need to extract the hashString part and hash that
-        
-        char originalMsg[MAX_LINE_LENGTH];
-        strncpy(originalMsg, msgBuffer, MAX_LINE_LENGTH-1);
-        originalMsg[MAX_LINE_LENGTH-1] = '\0';
-        
-        // Find where the message starts after the hash
-        char *hashPos = strchr(originalMsg, ' ');
-        if (hashPos) {
-            // Skip the space after the hash to get the actual hashString
-            hashPos++;
-            
-            // This should be exactly what the bash script passed to hashString()
-            dtnex_log("\033[33m[DEBUG] Original message format: '%s'\033[0m", hashPos);
-            hashString(hashPos, testHash3, config->presSharedNetworkKey);
-            dtnex_log("\033[33m[TEST3] Format='original message without hash (%s)', Hash=%s\033[0m", 
-                     hashPos, testHash3);
-            
-            // Check if this hash matches - this is the most likely format
-            if (strcmp(msgHash, testHash3) == 0) {
-                dtnex_log("\033[32m[VERIFIED] Hash matched with format 3 - bash exact format\033[0m");
-                
-                // Extract the metadata for storage - need to skip 1 m expireTime nodeId
-                char *rest = hashPos;
-                int count = 0;
-                char *correct_metadata = NULL;
-                
-                // Skip the first 4 tokens (1, m, expireTime, nodeId)
-                while (rest && count < 4) {
-                    rest = strchr(rest, ' ');
-                    if (rest) {
-                        rest++; // Skip the space
-                        count++;
-                    }
-                }
-                
-                // Now rest points to the metadata
-                if (rest) {
-                    dtnex_log("\033[32m[EXTRACTED] Final metadata from message: '%s'\033[0m", rest);
-                    updateNodeMetadata(config, msgOrigin, rest);
-                    return; // Exit since we found a match
-                }
-            }
-        }
-        
-        // Check if any of our test hashes match
-        if (strcmp(msgHash, testHash1) == 0) {
-            dtnex_log("\033[32m[VERIFIED] Hash matched with format 1\033[0m");
-            updateNodeMetadata(config, msgOrigin, metadata);
-        } else if (strcmp(msgHash, testHash2) == 0) {
-            dtnex_log("\033[32m[VERIFIED] Hash matched with format 2\033[0m");
-            updateNodeMetadata(config, msgOrigin, metadata);
-        } else if (strcmp(msgHash, testHash3) == 0) {
-            dtnex_log("\033[32m[VERIFIED] Hash matched with format 3\033[0m");
-            updateNodeMetadata(config, msgOrigin, metadata);
-        } else {
-            // For interoperability, accept messages with any hash if metadata appears valid
-            // We'd rather accept a few malformed messages than reject valid ones
-            if (metadata != NULL && *metadata != '\0') {
-                dtnex_log("\033[33m[WARNING] Accepting metadata despite hash mismatch (hash: %s)\033[0m", msgHash);
-                
-                // Extract useful metadata part - try to find reasonable content
-                char *cleanMetadata = metadata;
-                
-                // If the metadata has node ID prefix (common pattern), try to clean it
-                char nodeIdStr[32];
-                snprintf(nodeIdStr, sizeof(nodeIdStr), "%lu", msgOrigin);
-                if (strncmp(metadata, nodeIdStr, strlen(nodeIdStr)) == 0) {
-                    // Skip the prefix and any space after it
-                    cleanMetadata = metadata + strlen(nodeIdStr);
-                    while (*cleanMetadata && isspace(*cleanMetadata)) cleanMetadata++;
-                }
-                
-                // Accept the metadata if it looks like a descriptive string
-                if (strchr(cleanMetadata, ',') || strchr(cleanMetadata, '@') || 
-                    strchr(cleanMetadata, '-') || strchr(cleanMetadata, '.')) {
-                    dtnex_log("\033[33m[ACCEPT] Metadata looks valid: '%s'\033[0m", cleanMetadata);
-                    updateNodeMetadata(config, msgOrigin, cleanMetadata);
-                } else {
-                    dtnex_log("\033[31m[REJECT] Metadata doesn't look valid: '%s'\033[0m", cleanMetadata);
-                }
-            } else {
-                dtnex_log("\033[31m[FATAL] All hash calculation methods failed and no valid metadata\033[0m");
-                // Log diagnostics to help understand the message format
-                dtnex_log("\033[31m[DEBUG] Message buffer: '%s'\033[0m", msgBuffer);
-            }
-        }
-    }
+             }
+   
+    
     
     // Forward to all neighbors except source and origin
     Plan plans[MAX_PLANS];
     int planCount = 0;
     getplanlist(config, plans, &planCount);
     
-    // Forward the metadata - be careful about argument order!
-    // We use msgOrigin as nodeA, and pass the metadata string as a "fake" nodeB parameter
-    // The forwardContactMessage function will handle this correctly
-    forwardContactMessage(config, msgHash, "m", msgExpireTime, msgOrigin, msgSentFrom, 
-                         msgOrigin, (unsigned long)metadata, plans, planCount);
+    // Forward the metadata using the dedicated function
+    forwardMetadataMessage(config, msgHash, msgExpireTime, msgOrigin, msgSentFrom, metadata, plans, planCount);
 }
 
 /**
@@ -1682,8 +1572,19 @@ void createGraph(DtnexConfig *config) {
     fprintf(graphFile, "// dot -Tpng %s -o %s\n", graphvizFile, config->graphFile);
     fprintf(graphFile, "// You can also use other formats like: -Tsvg, -Tpdf, -Tjpg\n\n");
     
-    // Write the graph header
-    fprintf(graphFile, "digraph G { layout=neato; overlap=false;\n");
+    // Write the graph header with new style - dark blue background
+    fprintf(graphFile, "digraph G {\n");
+    fprintf(graphFile, "    layout=neato;\n");
+    fprintf(graphFile, "    overlap=false;\n");
+    fprintf(graphFile, "    bgcolor=\"#1c2333\";\n\n");    // Dark blue/slate background approximating rgba(28, 35, 51, 0.9)
+    
+    // Add global node and edge styling
+    fprintf(graphFile, "    // Node formatting\n");
+    fprintf(graphFile, "    node [style=\"filled\", color=\"#4a8bfc\", fillcolor=\"#1c2333\", fontcolor=\"white\"];\n\n");
+    
+    // Edge formatting
+    fprintf(graphFile, "    // Edge formatting\n");
+    fprintf(graphFile, "    edge [color=\"#dddddd\", penwidth=1.5];\n\n");
     
     // Add nodes to the graph from in-memory metadata list
     // Note: The nodeMetadataList is kept in memory and only written to nodesmetadata.txt
@@ -1712,8 +1613,8 @@ void createGraph(DtnexConfig *config) {
         }
         *dst = '\0';
         
-        // Add the node
-        fprintf(graphFile, "\"ipn:%lu\" [label=< <FONT POINT-SIZE=\"14\" FACE=\"Arial\" COLOR=\"darkred\"><B>ipn:%lu</B></FONT><BR/><FONT POINT-SIZE=\"10\" FACE=\"Arial\" COLOR=\"blue\">%s</FONT>>];\n", 
+        // Add the node with new styling (blue node ID, white metadata)
+        fprintf(graphFile, "    \"ipn:%lu\" [label=< <FONT POINT-SIZE=\"14\" FACE=\"Arial\" COLOR=\"#4a8bfc\"><B>ipn:%lu</B></FONT><BR/><FONT POINT-SIZE=\"10\" FACE=\"Arial\" COLOR=\"white\">%s</FONT>>];\n", 
                 nodeMetadataList[i].nodeId, nodeMetadataList[i].nodeId, escapedMetadata);
     }
     
@@ -1740,7 +1641,8 @@ void createGraph(DtnexConfig *config) {
     }
     *dst = '\0';
     
-    fprintf(graphFile, "\"ipn:%lu\" [label=< <FONT POINT-SIZE=\"14\" FACE=\"Arial\" COLOR=\"darkred\"><B>ipn:%lu</B></FONT><BR/><FONT POINT-SIZE=\"10\" FACE=\"Arial\" COLOR=\"blue\">%s</FONT>>];\n", 
+    // Special styling for local node - use a slightly different color to highlight it
+    fprintf(graphFile, "    \"ipn:%lu\" [label=< <FONT POINT-SIZE=\"14\" FACE=\"Arial\" COLOR=\"#4a8bfc\"><B>ipn:%lu</B></FONT><BR/><FONT POINT-SIZE=\"10\" FACE=\"Arial\" COLOR=\"white\">%s</FONT>>, fillcolor=\"#232942\"];\n", 
             config->nodeId, config->nodeId, escapedMetadata);
     
     // Use a direct API approach which gives the same contacts that ionadmin shows
@@ -1783,8 +1685,8 @@ void createGraph(DtnexConfig *config) {
     // Use a more explicit format for the label to avoid potential issues with special characters
     char timeStr[32];
     strftime(timeStr, sizeof(timeStr), "%Y-%m-%d %H:%M:%S", localtime(&currentTime));
-    fprintf(graphFile, "labelloc=\"t\";\n");
-    fprintf(graphFile, "label=\"IPNSIG's DTN Network Graph, Updated: %s\";\n", timeStr);
+    fprintf(graphFile, "    labelloc=\"t\";\n");
+    fprintf(graphFile, "    label=<<FONT FACE=\"Arial\" COLOR=\"white\">IPNSIG's DTN Network Graph, Updated: %s</FONT>>;\n", timeStr);
     fprintf(graphFile, "}\n"); // Close the graph with a clean bracket on its own line
     
     // Ensure all data is written and properly close the file
@@ -1792,6 +1694,49 @@ void createGraph(DtnexConfig *config) {
     fclose(graphFile);
     
     dtnex_log("\033[36m[INFO] Graph updated with %d contacts\033[0m", contactCount);
+    
+    // Write the metadata list to a file in the same directory as the .gv file
+    // Extract the directory path from the graphvizFile
+    char metadataFilePath[512];
+    char *lastSlash = strrchr(graphvizFile, '/');
+    
+    if (lastSlash) {
+        // If graphvizFile includes a path, use the same path
+        size_t dirLen = lastSlash - graphvizFile + 1;
+        strncpy(metadataFilePath, graphvizFile, dirLen);
+        metadataFilePath[dirLen] = '\0';
+        strcat(metadataFilePath, "metadata_list.txt");
+    } else {
+        // If graphvizFile is just a filename, use the current directory
+        strcpy(metadataFilePath, "metadata_list.txt");
+    }
+    
+    // Write metadata list to file
+    FILE *metadataFile = fopen(metadataFilePath, "w");
+    if (metadataFile) {
+        fprintf(metadataFile, "# DTN Metadata List - Generated by DTNEXC on %s\n\n", timeStr);
+        fprintf(metadataFile, "NODE ID    | METADATA\n");
+        fprintf(metadataFile, "------------------------------------------------------------\n");
+        
+        // First write our own node's metadata
+        fprintf(metadataFile, "%-10lu | %s (LOCAL NODE)\n", config->nodeId, config->nodemetadata);
+        
+        // Then write all other nodes' metadata
+        for (i = 0; i < nodeMetadataCount; i++) {
+            if (nodeMetadataList[i].nodeId != config->nodeId) {
+                fprintf(metadataFile, "%-10lu | %s\n", 
+                        nodeMetadataList[i].nodeId, nodeMetadataList[i].metadata);
+            }
+        }
+        
+        fprintf(metadataFile, "\n# Total nodes: %d\n", nodeMetadataCount + 1); // +1 for our own node
+        
+        fflush(metadataFile);
+        fclose(metadataFile);
+        dtnex_log("\033[36m[INFO] Metadata list written to %s\033[0m", metadataFilePath);
+    } else {
+        dtnex_log("\033[31m[ERROR] Failed to write metadata list to %s\033[0m", metadataFilePath);
+    }
     
     // Print a complete list of all metadata after graph generation
     dtnex_log("\033[36m======== METADATA USED FOR GRAPH GENERATION (%d nodes) ========\033[0m", nodeMetadataCount);

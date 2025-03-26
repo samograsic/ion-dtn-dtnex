@@ -87,123 +87,134 @@ DTNEXC is built as a standalone C application that interfaces directly with ION-
 5. **Node Metadata Exchange**: Shares information about DTN nodes
 6. **Graph Visualization**: Generates network topology visualizations
 
-### Key Components
+# DTNEX Contact Message Format Specification
 
-#### 1. Bundle Protocol Interface
+## Overview
+The DTNEX (DTN Exchange) system exchanges contact information and metadata between DTN nodes using a simple, standardized message format. This document describes the message format, validation mechanism, and processing flow for these messages.
 
-DTNEXC uses ION's Bundle Protocol (BP) API to send and receive network messages. It registers a specialized endpoint to listen for incoming contacts and metadata.
+## Message Types
+DTNEX supports two primary message types:
+1. **Contact Messages** (type 'c'): Inform nodes about contact opportunities between pairs of nodes
+2. **Metadata Messages** (type 'm'): Provide additional information about nodes in the network
 
-```c
-// Initialize the ION BP system
-bp_attach();
+## Message Format
 
-// Register and open an endpoint for communication
-addEndpoint(endpointId, EnqueueBundle, NULL);
-bp_open(endpointId, &sap);
+### General Structure
+All DTNEX messages follow this general format:
+```
+<hash> <version> <type> <expire_time> <origin_node> <from_node> <additional_fields...>
 ```
 
-#### 2. Plan Management
+Where:
+- `<hash>`: A 10-character SHA-256 hash for message authentication (first 10 chars)
+- `<version>`: Message protocol version (currently "1")
+- `<type>`: Message type - "c" for contact, "m" for metadata
+- `<expire_time>`: Unix timestamp when the message expires
+- `<origin_node>`: Node ID of the message originator
+- `<from_node>`: Node ID that forwarded this message
+- `<additional_fields...>`: Fields specific to the message type
 
-The application directly queries ION's internal database to retrieve the list of neighbors (plans):
-
-```c
-// Get plans from ION's database
-Object planElt = sdr_list_first(sdr, bpConstants->plans);
-for (planElt = sdr_list_first(sdr, bpConstants->plans); 
-     planElt && planElt != 0; 
-     planElt = sdr_list_next(sdr, planElt)) {
-    // Process each plan...
-}
+### Contact Message Format
+A contact message (type 'c') has the format:
+```
+<hash> 1 c <expire_time> <origin_node> <from_node> <node_a> <node_b>
 ```
 
-#### 3. Contact Processing and Distribution
-
-When contact information is received from another node, DTNEXC:
-1. Validates the message using the pre-shared network key
-2. Processes the contact information 
-3. Updates the local ION contact graph if needed
-4. Forwards the information to other nodes
-
-#### 4. Security Measures
-
-Security is implemented through:
-- Pre-shared network key authentication using SHA-256 hashing
-- Input validation with `checkLine()` to prevent malicious content
-- Hash-based message caching to prevent forwarding loops
-
-#### 5. Metadata Exchange
-
-Node metadata (node name, email, location) can be shared across the network:
-
-```c
-// Update node metadata in the local database
-void updateNodeMetadata(DtnexConfig *config, unsigned long nodeId, const char *metadata) {
-    // Store metadata about remote nodes
-}
+Example:
+```
+a1b2c3d4e5 1 c 1709251200 268484800 268484800 268484800 268484801
 ```
 
-### Threading Model
+This message indicates:
+- Hash: a1b2c3d4e5 (for validation)
+- Version: 1
+- Type: c (contact)
+- Expires: 1709251200 (Unix timestamp)
+- Origin: 268484800 (node that created this contact)
+- From: 268484800 (node that sent this message)
+- NodeA: 268484800 (first endpoint of contact)
+- NodeB: 268484801 (second endpoint of contact)
 
-The C implementation uses a multi-threaded approach:
-- Main thread processes contacts and sends/forwards messages
-- Dedicated thread for the bpecho service for connectivity testing
-- Thread synchronization through pthread mutexes
+Meaning: There's a contact opportunity between nodes 268484800 and 268484801, valid until the expire time.
 
-### Performance Considerations
+### Metadata Message Format
+A metadata message (type 'm') has the format:
+```
+<hash> 1 m <expire_time> <origin_node> <from_node> <metadata>
+```
 
-1. The implementation minimizes SDR transactions for better performance
-2. Caches plan information to reduce database access
-3. Implements message deduplication through hash caching
-4. Uses direct ION API calls rather than external commands
+Example:
+```
+f6g7h8i9j0 1 m 1709251200 268484800 268484800 OpenIPN Node,samo@grasic.net,Sweden
+```
 
-## Output Improvements
+This message indicates:
+- Hash: f6g7h8i9j0 (for validation)
+- Version: 1
+- Type: m (metadata)
+- Expires: 1709251200 (Unix timestamp)
+- Origin: 268484800 (node that this metadata describes)
+- From: 268484800 (node that sent this message)
+- Metadata: "OpenIPN Node,samo@grasic.net,Sweden" (information about the node)
 
-### Color-Coded Message Categories
+## Message Validation
 
-Different message types are now color-coded for easier identification:
+### Hash Generation
+The hash is generated using SHA-256 with a pre-shared key:
 
-- **Red** (`\033[31m`): Error messages
-- **Green** (`\033[32m`): Success/Received notifications
-- **Yellow** (`\033[33m`): Sending/Warning notifications
-- **Blue** (`\033[34m`): Forwarding information
-- **Magenta** (`\033[35m`): Neighbor information
-- **Cyan** (`\033[36m`): System information and tables
+1. For contact messages:
+   ```
+   hash = sha256(key + "1 c <expire_time> <origin_node> <node_a> <node_b>")
+   ```
 
-### Structured Message Prefixes
+2. For metadata messages:
+   ```
+   hash = sha256(key + "1 m <expire_time> <origin_node> <metadata>")
+   ```
 
-Messages now include clear category prefixes to identify the type of operation:
+Only the first 10 characters of the hash are included in the message.
 
-- `[SEND]`: Outgoing bundle messages
-- `[RECEIVED]`: Incoming bundle messages with type and hash information
-- `[PROCESS]`: Message processing
-- `[FORWARD]`: Message forwarding
-- `[BPECHO]`: BPecho service operations
-- `[VERIFIED]`: Hash verification success
-- `[ERROR]`: Error conditions
-- `[INFO]`: General information
+### Validation Process
+When a node receives a message:
+1. It extracts the hash from the message
+2. It reconstructs the message content (without the hash and current 'from' field)
+3. It calculates the expected hash using the pre-shared key
+4. If the hashes match, the message is processed
+5. If the hashes don't match, the message is rejected
 
-### Concise Bundle Information
+## Message Processing
 
-Bundle information has been optimized for clarity and brevity:
+### Contact Message Processing
+When a valid contact message is received:
+1. The receiving node creates a bidirectional contact in ION between NodeA and NodeB:
+   - Contact from NodeA to NodeB with expiration time
+   - Contact from NodeB to NodeA with expiration time
+2. The node creates corresponding range entries in ION
+3. The node forwards the message to neighbors (except the origin and sender)
 
-- **Origin Node**: The node that originally created the message
-- **Bundle Type**: Contact or Metadata message type
-- **Hash Value**: For message identification and verification
-- **Link Information**: For contact information showing both connection endpoints
-- **Redundant Information Removed**: Node numbers in parentheses and "Using source EID" messages removed
+### Metadata Message Processing
+When a valid metadata message is received:
+1. The node updates its local metadata database for the origin node
+2. The node stores this information in a file (nodesmetadata.txt)
+3. If graph visualization is enabled, the metadata is included in node labels
+4. The node forwards the message to neighbors (except the origin and sender)
 
-### Network Visualization Improvements
+## Loop Prevention
+To prevent message loops, DTNEX implements two mechanisms:
 
-- Contact table shows active contacts in green and future contacts in yellow
-- Duration is now displayed in a human-readable format (days, hours, minutes)
-- Clear table formatting with column headers
-- Graph generation messages minimized to essential status information
-- Removed redundant file path and command information
+1. **Hash Caching**:
+   - Each node maintains a cache of recently seen message hashes
+   - If a received message's hash matches one in the cache, the message is ignored
+   - Hashes are stored in memory and in a file (receivedHashes.txt)
 
-### Implementation Notes
+2. **From Field Update**:
+   - When forwarding a message, the node replaces the 'from_node' field with its own ID
+   - This allows recipients to avoid sending the message back to recent forwarders
 
-- All output formatting is handled by the central `dtnex_log()` function
-- ANSI color codes are used for terminal output coloring
-- No additional dependencies were required beyond the existing codebase
-- Message reception visibility has been enhanced to clearly show message type and hash
-- All redundant information has been removed for cleaner output
+## Message Expiration
+Messages include an expiration timestamp to prevent outdated information from circulating. When processing a message, nodes check if the current time exceeds the expiration time. Expired messages are ignored.
+
+## Implementation Notes
+- Maximum metadata length is limited to 128 characters in C implementation (32 in Bash)
+- Contact times typically default to 3600 seconds (1 hour)
+- The pre-shared network key defaults to "open" but should be configured in production

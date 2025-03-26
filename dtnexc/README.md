@@ -155,3 +155,55 @@ The C implementation uses a multi-threaded approach:
 2. Caches plan information to reduce database access
 3. Implements message deduplication through hash caching
 4. Uses direct ION API calls rather than external commands
+
+## Output Improvements
+
+### Color-Coded Message Categories
+
+Different message types are now color-coded for easier identification:
+
+- **Red** (`\033[31m`): Error messages
+- **Green** (`\033[32m`): Success/Received notifications
+- **Yellow** (`\033[33m`): Sending/Warning notifications
+- **Blue** (`\033[34m`): Forwarding information
+- **Magenta** (`\033[35m`): Neighbor information
+- **Cyan** (`\033[36m`): System information and tables
+
+### Structured Message Prefixes
+
+Messages now include clear category prefixes to identify the type of operation:
+
+- `[SEND]`: Outgoing bundle messages
+- `[RECEIVED]`: Incoming bundle messages with type and hash information
+- `[PROCESS]`: Message processing
+- `[FORWARD]`: Message forwarding
+- `[BPECHO]`: BPecho service operations
+- `[VERIFIED]`: Hash verification success
+- `[ERROR]`: Error conditions
+- `[INFO]`: General information
+
+### Concise Bundle Information
+
+Bundle information has been optimized for clarity and brevity:
+
+- **Origin Node**: The node that originally created the message
+- **Bundle Type**: Contact or Metadata message type
+- **Hash Value**: For message identification and verification
+- **Link Information**: For contact information showing both connection endpoints
+- **Redundant Information Removed**: Node numbers in parentheses and "Using source EID" messages removed
+
+### Network Visualization Improvements
+
+- Contact table shows active contacts in green and future contacts in yellow
+- Duration is now displayed in a human-readable format (days, hours, minutes)
+- Clear table formatting with column headers
+- Graph generation messages minimized to essential status information
+- Removed redundant file path and command information
+
+### Implementation Notes
+
+- All output formatting is handled by the central `dtnex_log()` function
+- ANSI color codes are used for terminal output coloring
+- No additional dependencies were required beyond the existing codebase
+- Message reception visibility has been enhanced to clearly show message type and hash
+- All redundant information has been removed for cleaner output

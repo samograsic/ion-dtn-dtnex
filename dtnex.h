@@ -8,12 +8,12 @@
 #ifndef DTNEX_H
 #define DTNEX_H
 
-#include <bp.h>
-#include <rfx.h>
-#include <ion.h>
+#include "include/ion/bp.h"
+#include "include/ion/rfx.h"
+#include "include/ion/ion.h"
 // Internal ION structures we need
-#include "../ione-code/bpv7/library/bpP.h"
-#include "../ione-code/ici/include/smlist.h"
+#include "include/ion/bpP.h"
+#include "include/ion/smlist.h"
 #include <pthread.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -24,12 +24,12 @@
 #include <openssl/sha.h>
 
 // CBOR support using ION's implementation
-#include "../ione-code/ici/include/cbor.h"
+#include "include/ion/cbor.h"
 
 // Added for bpecho service
-#include "../ione-code/ici/include/zco.h"
-#include "../ione-code/ici/include/lyst.h"
-#include "../ione-code/ici/include/platform.h"
+#include "include/ion/zco.h"
+#include "include/ion/lyst.h"
+#include "include/ion/platform.h"
 
 // External functions from BP/ION library needed
 extern Sdr getIonsdr();
@@ -47,7 +47,7 @@ extern int removeEndpoint(char *endpointName);
 char *strptime(const char *s, const char *format, struct tm *tm);
 
 // Version information
-#define DTNEXC_VERSION "2.22"
+#define DTNEXC_VERSION "2.26"
 #define DTNEXC_BUILD_DATE __DATE__
 #define DTNEXC_BUILD_TIME __TIME__
 
@@ -163,6 +163,7 @@ typedef struct {
 
 // Function prototypes
 void loadConfig(DtnexConfig *config);
+int tryConnectToIon(DtnexConfig *config);
 int init(DtnexConfig *config);
 void getplanlist(DtnexConfig *config, Plan *plans, int *planCount);
 void exchangeWithNeighbors(DtnexConfig *config, Plan *plans, int planCount);
@@ -172,6 +173,16 @@ void createGraph(DtnexConfig *config);
 void signalHandler(int sig);
 void updateNodeMetadata(DtnexConfig *config, unsigned long nodeId, const char *metadata);
 void dtnex_log(const char *format, ...);
+
+// Optimized message logging functions
+void log_message_sent(DtnexConfig *config, unsigned long origin, unsigned long to, const char *type, 
+                     unsigned long nodeA, unsigned long nodeB, const char *metadata);
+void log_message_received(DtnexConfig *config, unsigned long origin, unsigned long from, const char *type,
+                         unsigned long nodeA, unsigned long nodeB, const char *metadata);
+void log_message_forwarded(DtnexConfig *config, unsigned long origin, unsigned long from, unsigned long to,
+                          const char *type, unsigned long nodeA, unsigned long nodeB, const char *metadata);
+void log_message_error(DtnexConfig *config, const char *error_msg);
+void log_contact_update(DtnexConfig *config, int contactCount);
 
 // CBOR message functions (using ION's CBOR implementation)
 int encodeCborContactMessage(DtnexConfig *config, ContactInfo *contact, unsigned char *buffer, int bufferSize);

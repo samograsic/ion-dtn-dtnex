@@ -48,7 +48,7 @@ DTNEX uses CBOR (Compact Binary Object Representation) for efficient message enc
 
 ### Prerequisites
 
-- **ION-DTN 4.1.0+**: Must be installed and configured
+- **ION-DTN 4.1.0+**: System libraries must be installed (`libbp`, `libici`)
 - **OpenSSL Development Libraries**: For HMAC authentication
 - **Build Tools**: GCC compiler and development headers
 - **Optional**: GraphViz for network visualization
@@ -71,44 +71,42 @@ sudo apt install build-essential libssl-dev
 sudo apt install graphviz
 \`\`\`
 
-### ION-DTN Setup
+### ION-DTN System Libraries
 
-DTNEX requires ION-DTN source code headers for compilation. Two options:
+DTNEX requires ION-DTN system libraries to be installed. Install ION-DTN either:
 
-#### Option 1: Full ION Source (Recommended)
+#### Option 1: From Package Manager (if available)
 \`\`\`bash
-# Clone ION source adjacent to DTNEX
-cd /path/to/projects/
-git clone https://github.com/nasa-jpl/ION ion-dtn
-git clone https://github.com/samograsic/ion-dtn-dtnex dtnex
-cd dtnex
+# Ubuntu/Debian (if ION packages are available)
+sudo apt install ion-dtn-dev
 \`\`\`
 
-#### Option 2: Minimal Headers Only
+#### Option 2: Build and Install ION from Source
 \`\`\`bash
-# Create header directories
-mkdir -p ../ione-code/bpv7/include
-mkdir -p ../ione-code/ici/include  
-mkdir -p ../ione-code/bpv7/library
-
-# Copy required headers from ION installation
-cp -r /usr/local/include/bp.h ../ione-code/bpv7/include/
-# ... (additional headers as needed)
+# Download and build ION-DTN
+git clone https://github.com/nasa-jpl/ION
+cd ION
+make install
+# This installs system libraries to /usr/local/lib/
 \`\`\`
 
-### Building DTNEX
+### Building DTNEX (Self-contained)
+
+DTNEX now includes all necessary ION headers and builds without requiring ION source code:
 
 \`\`\`bash
 # Clone the repository
 git clone https://github.com/samograsic/ion-dtn-dtnex
 cd ion-dtn-dtnex
 
-# Build the application
-./build.sh
+# Build using self-contained build script
+./build_standalone.sh
 
 # Optional: Install system-wide
 sudo make install
 \`\`\`
+
+The self-contained build only requires ION system libraries (`libbp`, `libici`) to be installed - no ION source code needed!
 
 ## Configuration
 

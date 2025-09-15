@@ -66,6 +66,68 @@ void debug_log(DtnexConfig *config, const char *format, ...) {
 }
 
 /**
+ * Optimized message logging functions
+ * Format: [TYPE] Origin→From→To: Contact(A↔B) | Metadata(Node:Name)
+ */
+
+// Yellow for sending messages
+void log_message_sent(DtnexConfig *config, unsigned long origin, unsigned long to, const char *type, 
+                     unsigned long nodeA, unsigned long nodeB, const char *metadata) {
+    if (!config->debugMode) return;
+    
+    if (strcmp(type, "contact") == 0) {
+        printf("\033[33m[SENT] %lu→%lu→%lu: Contact(%lu↔%lu)\033[0m\n", 
+               origin, config->nodeId, to, nodeA, nodeB);
+    } else if (strcmp(type, "metadata") == 0) {
+        printf("\033[33m[SENT] %lu→%lu→%lu: Metadata(%lu:%s)\033[0m\n",
+               origin, config->nodeId, to, nodeA, metadata ? metadata : "?");
+    }
+    fflush(stdout);
+}
+
+// Green for receiving messages  
+void log_message_received(DtnexConfig *config, unsigned long origin, unsigned long from, const char *type,
+                         unsigned long nodeA, unsigned long nodeB, const char *metadata) {
+    if (!config->debugMode) return;
+    
+    if (strcmp(type, "contact") == 0) {
+        printf("\033[32m[RECV] %lu→%lu→%lu: Contact(%lu↔%lu)\033[0m\n",
+               origin, from, config->nodeId, nodeA, nodeB);
+    } else if (strcmp(type, "metadata") == 0) {
+        printf("\033[32m[RECV] %lu→%lu→%lu: Metadata(%lu:%s)\033[0m\n",
+               origin, from, config->nodeId, nodeA, metadata ? metadata : "?");
+    }
+    fflush(stdout);
+}
+
+// Purple for forwarding messages
+void log_message_forwarded(DtnexConfig *config, unsigned long origin, unsigned long from, unsigned long to,
+                          const char *type, unsigned long nodeA, unsigned long nodeB, const char *metadata) {
+    if (!config->debugMode) return;
+    
+    if (strcmp(type, "contact") == 0) {
+        printf("\033[35m[FRWD] %lu→%lu→%lu: Contact(%lu↔%lu)\033[0m\n",
+               origin, from, to, nodeA, nodeB);
+    } else if (strcmp(type, "metadata") == 0) {
+        printf("\033[35m[FRWD] %lu→%lu→%lu: Metadata(%lu:%s)\033[0m\n",
+               origin, from, to, nodeA, metadata ? metadata : "?");
+    }
+    fflush(stdout);
+}
+
+// Gray for error/unknown messages (always shown even in normal mode)
+void log_message_error(DtnexConfig *config, const char *error_msg) {
+    printf("\033[90m[ERROR] %s\033[0m\n", error_msg);
+    fflush(stdout);
+}
+
+// New contact graph updates (shown in both debug and normal mode)
+void log_contact_update(DtnexConfig *config, int contactCount) {
+    printf("\033[36m[UPDATE] Contact graph refreshed: %d active contacts\033[0m\n", contactCount);
+    fflush(stdout);
+}
+
+/**
  * Loads configuration from dtnex.conf file
  * If file doesn't exist, use defaults (but will not exchange own metadata)
  */
@@ -174,44 +236,26 @@ void loadConfig(DtnexConfig *config) {
 // No global endpoint status needed in the single-threaded version
 
 /**
- * Initialize the DTNEX application - Modified to work without requiring endpoint
+ * Try to connect to ION - returns 0 on success, -1 on failure
+ * This function handles all ION connection logic cleanly
  */
-int init(DtnexConfig *config) {
-    int retry_count = 0;
-    const int max_retries = 3;
+int tryConnectToIon(DtnexConfig *config) {
+    char endpointId[MAX_EID_LENGTH];
     
-    dtnex_log("Starting DTNEXC v%s (built %s %s), author: Samo Grasic (samo@grasic.net)", 
-              DTNEXC_VERSION, DTNEXC_BUILD_DATE, DTNEXC_BUILD_TIME);
-    
-    // Initialize the ION BP system with retries
-    while (retry_count < max_retries) {
-        if (bp_attach() < 0) {
-            dtnex_log("Error attaching to BP (attempt %d of %d), waiting and retrying...", 
-                     retry_count + 1, max_retries);
-            sleep(2); // Wait before retrying
-            retry_count++;
-            
-            // On the last attempt, fail
-            if (retry_count >= max_retries) {
-                dtnex_log("Error attaching to BP after %d attempts", max_retries);
-                return -1;
-            }
-        } else {
-            break; // Successfully attached
-        }
+    // Try to attach to ION BP system
+    if (bp_attach() < 0) {
+        return -1;
     }
     
-    // Get the node ID from the ION configuration
+    // Get the node ID from ION configuration
     Sdr ionsdr = getIonsdr();
     if (ionsdr == NULL) {
-        dtnex_log("❌ Error: Can't get ION SDR");
         bp_detach();
         return -1;
     }
     
     // Start transaction to safely access ION configuration
     if (sdr_begin_xn(ionsdr) < 0) {
-        dtnex_log("❌ Error: Can't begin transaction");
         bp_detach();
         return -1;
     }
@@ -220,7 +264,6 @@ int init(DtnexConfig *config) {
     IonDB iondb;
     Object iondbObject = getIonDbObject();
     if (iondbObject == 0) {
-        dtnex_log("❌ Error: Can't get ION DB object");
         sdr_exit_xn(ionsdr);
         bp_detach();
         return -1;
@@ -232,52 +275,42 @@ int init(DtnexConfig *config) {
     sdr_exit_xn(ionsdr);
     
     if (config->nodeId == 0) {
-        dtnex_log("❌ Error: Invalid node number (0) from ION configuration");
         bp_detach();
         return -1;
     }
     
     dtnex_log("Using node ID: %lu detected from ION configuration", config->nodeId);
     
-    // Always use the hardcoded service numbers
-    strcpy(config->serviceNr, "12160");
-    strcpy(config->bpechoServiceNr, "12161");
-    
-    // Format the endpoint ID as ipn:node.service
-    char endpointId[MAX_EID_LENGTH];
-    sprintf(endpointId, "ipn:%lu.%s", config->nodeId, config->serviceNr);
+    // Construct endpoint ID
+    snprintf(endpointId, MAX_EID_LENGTH, "ipn:%lu.%s", config->nodeId, config->serviceNr);
     dtnex_log("Using endpoint: %s", endpointId);
     
     // Get the SDR
     sdr = bp_get_sdr();
     if (sdr == NULL) {
-        dtnex_log("❌ Failed to get SDR");
         bp_detach();
         return -1;
     }
     
     // First try to add/register the endpoint in ION's routing database
     if (addEndpoint(endpointId, EnqueueBundle, NULL) < 0) {
-        dtnex_log("⚠️ Warning: Could not register endpoint %s in routing database", endpointId);
+        debug_log(config, "Warning: Could not register endpoint %s in routing database", endpointId);
     }
     
     // Try to open the endpoint for receiving messages
     if (bp_open(endpointId, &sap) < 0) {
-        dtnex_log("❌ Failed to open endpoint %s for receiving", endpointId);
-        
-        // Set SAP to NULL to indicate we don't have a valid endpoint
-        sap = NULL;
-    } else {
-        dtnex_log("✅ Endpoint opened successfully: %s", endpointId);
+        bp_detach();
+        return -1;
     }
     
-    // Add own node metadata as the first entry in the list
+    dtnex_log("✅ Endpoint opened successfully: %s", endpointId);
+    
+    // If metadata exchange is enabled, add our own metadata first
     if (!config->noMetadataExchange && strlen(config->nodemetadata) > 0) {
-        char ownMetadata[MAX_METADATA_LENGTH];
         StructuredMetadata metadata;
+        char ownMetadata[MAX_METADATA_LENGTH];
         
-        // Parse own metadata
-        metadata.nodeId = config->nodeId;
+        // Parse our own metadata
         parseNodeMetadata(config->nodemetadata, &metadata);
         
         // Create metadata string with GPS if available
@@ -294,6 +327,29 @@ int init(DtnexConfig *config) {
         updateNodeMetadata(config, config->nodeId, ownMetadata);
         dtnex_log("✅ Added own node metadata: %s", ownMetadata);
     }
+    
+    return 0;
+}
+
+/**
+ * Initialize the DTNEX application - Modified to work without requiring ION connection
+ */
+int init(DtnexConfig *config) {
+    dtnex_log("Starting DTNEXC v%s (built %s %s), author: Samo Grasic (samo@grasic.net)", 
+              DTNEXC_VERSION, DTNEXC_BUILD_DATE, DTNEXC_BUILD_TIME);
+    
+    // Try to connect to ION, but don't fail if unavailable
+    if (tryConnectToIon(config) == 0) {
+        dtnex_log("✅ Successfully connected to ION");
+    } else {
+        dtnex_log("⚠️ ION not available - will retry every minute");
+        // Set default node ID for service mode
+        config->nodeId = 0;
+    }
+    
+    // Initialize service configuration
+    strcpy(config->serviceNr, "12160");
+    strcpy(config->bpechoServiceNr, "12161");
     
     dtnex_log("DTNEXC initialized successfully");
     return 0;
@@ -520,9 +576,9 @@ void exchangeWithNeighbors(DtnexConfig *config, Plan *plans, int planCount) {
                     // Send CBOR bundle
                     sendCborBundle(destEid, cborBuffer, messageSize, config->bundleTTL);
                     
-                    // Always show startup message exchange for visibility
-                    dtnex_log("📤 [CBOR %db] Sending contact %lu↔%lu to neighbor %lu", 
-                        messageSize, contact.nodeA, contact.nodeB, neighborId);
+                    // Log optimized sending message
+                    log_message_sent(config, config->nodeId, neighborId, "contact", 
+                                   contact.nodeA, contact.nodeB, NULL);
                 } else {
                     dtnex_log("❌ Failed to encode CBOR contact message for %lu↔%lu", 
                         config->nodeId, targetPlan);
@@ -564,9 +620,9 @@ void exchangeWithNeighbors(DtnexConfig *config, Plan *plans, int planCount) {
                     // Send CBOR bundle
                     sendCborBundle(destEid, cborBuffer, messageSize, config->bundleTTL);
                     
-                    // Always show metadata exchange for visibility  
-                    dtnex_log("📤 [CBOR %db] Sending metadata node %lu (%s) to neighbor %lu", 
-                        messageSize, metadata.nodeId, metadata.name, neighborId);
+                    // Log optimized metadata sending message
+                    log_message_sent(config, config->nodeId, neighborId, "metadata", 
+                                   metadata.nodeId, 0, metadata.name);
                 } else {
                     dtnex_log("❌ Failed to encode CBOR metadata message for node %lu", config->nodeId);
                 }
@@ -743,10 +799,13 @@ void getContacts(DtnexConfig *config) {
     IonCXref *contact;
     int contactCount = 0;
     
-    // Header for contact plan table
-    dtnex_log("\033[36m%-12s %-12s %-20s %-20s %-15s %-12s\033[0m",
-            "FROM NODE", "TO NODE", "START TIME", "END TIME", "DURATION", "STATUS");
-    dtnex_log("\033[36m-----------------------------------------------------------------------\033[0m");
+    // Only show detailed table in debug mode
+    if (config->debugMode) {
+        // Header for contact plan table
+        dtnex_log("\033[36m%-12s %-12s %-20s %-20s %-15s %-12s\033[0m",
+                "FROM NODE", "TO NODE", "START TIME", "END TIME", "DURATION", "STATUS");
+        dtnex_log("\033[36m-----------------------------------------------------------------------\033[0m");
+    }
     
     // Get the SDR database
     sdr = getIonsdr();
@@ -833,14 +892,17 @@ void getContacts(DtnexConfig *config) {
         const char* status = (contact->fromTime <= currentTime && currentTime <= contact->toTime) ? 
                              "\033[32mACTIVE\033[0m" : "\033[33mFUTURE\033[0m";
         
-        // Format and output the contact information in a table row
-        dtnex_log("%-12lu %-12lu %-20s %-20s %-15s %s",
-                (unsigned long)contact->fromNode, 
-                (unsigned long)contact->toNode,
-                startTimeStr,
-                endTimeStr,
-                durationStr,
-                status);
+        // Only show detailed contact info in debug mode
+        if (config->debugMode) {
+            // Format and output the contact information in a table row
+            dtnex_log("%-12lu %-12lu %-20s %-20s %-15s %s",
+                    (unsigned long)contact->fromNode, 
+                    (unsigned long)contact->toNode,
+                    startTimeStr,
+                    endTimeStr,
+                    durationStr,
+                    status);
+        }
         
         contactCount++;
     }
@@ -848,11 +910,17 @@ void getContacts(DtnexConfig *config) {
     // End the transaction
     sdr_exit_xn(sdr);
     
-    if (contactCount == 0) {
-        dtnex_log("No contacts found in ION database");
+    if (config->debugMode) {
+        // Show detailed summary in debug mode
+        if (contactCount == 0) {
+            dtnex_log("No contacts found in ION database");
+        } else {
+            dtnex_log("\033[36m-----------------------------------------------------------------------\033[0m");
+            dtnex_log("Total contacts: %d", contactCount);
+        }
     } else {
-        dtnex_log("\033[36m-----------------------------------------------------------------------\033[0m");
-        dtnex_log("Total contacts: %d", contactCount);
+        // Show simple update in normal mode
+        log_contact_update(config, contactCount);
     }
 }
 
@@ -1329,9 +1397,7 @@ void *runBundleReception(void *arg) {
                     snprintf(sourceInfo, sizeof(sourceInfo), "unknown");
                 }
                 
-                // Log bundle reception
-                dtnex_log("\033[32m📥 [CBOR %db] Bundle from %s (TTL: %us)\033[0m", 
-                    contentLength, sourceInfo, dlv.timeToLive);
+                // Bundle received - will be logged in message processing
                 
                 // Process the CBOR message
                 processCborMessage(config, (unsigned char*)buffer, contentLength);
@@ -1645,7 +1711,7 @@ int encodeCborContactMessage(DtnexConfig *config, ContactInfo *contact, unsigned
     calculateHmac(buffer, bytesWritten, config->presSharedNetworkKey, hmac);
     bytesWritten += cbor_encode_byte_string(hmac, DTNEX_HMAC_SIZE, &cursor);
     
-    dtnex_log("\033[36m[CBOR] Encoded contact message: %d bytes\033[0m", bytesWritten);
+    debug_log(config, "[CBOR] Encoded contact message: %d bytes", bytesWritten);
     return bytesWritten;
 }
 
@@ -1710,7 +1776,7 @@ int encodeCborMetadataMessage(DtnexConfig *config, StructuredMetadata *metadata,
     calculateHmac(buffer, bytesWritten, config->presSharedNetworkKey, hmac);
     bytesWritten += cbor_encode_byte_string(hmac, DTNEX_HMAC_SIZE, &cursor);
     
-    dtnex_log("\033[36m[CBOR] Encoded metadata message: %d bytes\033[0m", bytesWritten);
+    debug_log(config, "[CBOR] Encoded metadata message: %d bytes", bytesWritten);
     return bytesWritten;
 }
 
@@ -1827,7 +1893,7 @@ int sendCborBundle(const char *destEid, unsigned char *cborData, int dataSize, i
     }
     
     // Log the successful CBOR send operation with size
-    dtnex_log("\033[33m📤 [CBOR %db] Sent to %s\033[0m", dataSize, destEid);
+    // Sending handled by caller with log_message_sent
     
     return dataSize;
 }
@@ -1842,40 +1908,60 @@ void eventDrivenLoop(DtnexConfig *config) {
     Plan plans[MAX_PLANS];
     int planCount = 0;
     time_t nextUpdateTime = 0;
+    time_t nextIonRetry = 0;
     time_t currentTime;
     int messageReceived;
+    int ionConnected = (sap != NULL && config->nodeId != 0);
     
     dtnex_log("🔄 Starting event-driven operation (update every %d minutes)", config->updateInterval / 60);
     
-    // Schedule first update immediately
-    scheduleNextUpdate(config, &nextUpdateTime);
+    // If ION is not connected, schedule immediate retry
+    if (!ionConnected) {
+        nextIonRetry = time(NULL);
+        dtnex_log("⚠️ ION not connected - will retry every minute");
+    } else {
+        // Schedule first update immediately if ION is connected
+        scheduleNextUpdate(config, &nextUpdateTime);
+    }
     
     while (running) {
         currentTime = time(NULL);
         messageReceived = 0;
         
-        // Check if it's time for scheduled update
-        if (currentTime >= nextUpdateTime) {
-            dtnex_log("\n📅 Scheduled update at %s", ctime(&currentTime));
-            
+        // Check if we need to retry ION connection
+        if (!ionConnected && currentTime >= nextIonRetry) {
+            dtnex_log("🔌 Attempting to connect to ION...");
+            if (tryConnectToIon(config) == 0) {
+                ionConnected = 1;
+                dtnex_log("✅ Successfully connected to ION");
+                // Schedule first update immediately after connection
+                scheduleNextUpdate(config, &nextUpdateTime);
+            } else {
+                dtnex_log("🚨 Failed to connect to ION");
+                nextIonRetry = currentTime + 60; // Retry in 1 minute
+            }
+        }
+        
+        // If ION is connected, check if it's time for scheduled update
+        if (ionConnected && currentTime >= nextUpdateTime) {
             // Check ION status before proceeding
             IonStatus ionStatus = checkIonStatus(config);
             if (ionStatus != ION_STATUS_RUNNING) {
-                dtnex_log("⚠️ ION not available, attempting reconnection...");
-                if (reconnectToIon(config) < 0) {
-                    dtnex_log("💤 ION reconnection failed, sleeping 60 seconds...");
-                    sleep(60);
-                    continue;
-                }
-                dtnex_log("✅ ION reconnected successfully");
+                dtnex_log("⚠️ Lost connection to ION");
+                ionConnected = 0;
+                nextIonRetry = currentTime + 60; // Retry in 1 minute
+                continue;
             }
             
             // Get current plan list
             getplanlist(config, plans, &planCount);
             
-            // Perform scheduled operations
-            exchangeWithNeighbors(config, plans, planCount);
-            getContacts(config);
+            // Only perform operations if we have ION connection
+            if (ionConnected) {
+                // Perform scheduled operations
+                exchangeWithNeighbors(config, plans, planCount);
+                getContacts(config);
+            }
             
             // Display collected metadata (if debug mode)
             if (config->debugMode) {
@@ -1897,12 +1983,22 @@ void eventDrivenLoop(DtnexConfig *config) {
         // Bundle reception is now handled by the dedicated thread
         if (!running) break;
         
-        // Update contact info to ensure we have the latest topology
-        getContacts(config);
+        // Update contact info to ensure we have the latest topology (only if ION connected)
+        if (ionConnected) {
+            getContacts(config);
+        }
         
         // Calculate sleep time until next event
         currentTime = time(NULL);
-        time_t sleepTime = nextUpdateTime - currentTime;
+        time_t sleepTime;
+        
+        if (!ionConnected) {
+            // When ION is not connected, sleep until next retry
+            sleepTime = nextIonRetry - currentTime;
+        } else {
+            // When ION is connected, sleep until next update
+            sleepTime = nextUpdateTime - currentTime;
+        }
         
         if (sleepTime > 0) {
             // Sleep in 1-second increments to allow for responsive Ctrl+C handling
@@ -2017,7 +2113,7 @@ void processCborMessage(DtnexConfig *config, unsigned char *buffer, int bufferSi
     // Decode the CBOR message
     int result = decodeCborMessage(config, buffer, bufferSize);
     if (result < 0) {
-        debug_log(config, "❌ Failed to decode CBOR message - unknown bundle format");
+        log_message_error(config, "Failed to decode CBOR message - unknown bundle format");
         return;
     }
     
@@ -2458,7 +2554,9 @@ int decodeCborMessage(DtnexConfig *config, unsigned char *buffer, int bufferSize
         }
         debug_log(config, "✅ Successfully skipped metadata elements for HMAC");
     } else {
-        debug_log(config, "❌ Unknown message type '%c'", messageType[0]);
+        char error_msg[64];
+        snprintf(error_msg, sizeof(error_msg), "Unknown message type '%c'", messageType[0]);
+        log_message_error(config, error_msg);
         return -1;
     }
     
@@ -2540,7 +2638,7 @@ int decodeCborMessage(DtnexConfig *config, unsigned char *buffer, int bufferSize
         return processCborMetadataMessage(config, nonce, timestamp, expireTime, origin, from, &extractedMetadata);
     }
     
-    debug_log(config, "❌ Unknown message type or failed to extract data");
+    log_message_error(config, "Unknown message type or failed to extract data");
     return -1;
 }
 
@@ -2549,8 +2647,7 @@ int decodeCborMessage(DtnexConfig *config, unsigned char *buffer, int bufferSize
  */
 int processCborContactMessage(DtnexConfig *config, unsigned char *nonce, time_t timestamp, time_t expireTime, 
                              unsigned long origin, unsigned long from, ContactInfo *contact) {
-    debug_log(config, "📥 [CBOR] Contact from %lu: Link %lu↔%lu (%d min)", 
-        from, contact->nodeA, contact->nodeB, contact->duration);
+    log_message_received(config, origin, from, "contact", contact->nodeA, contact->nodeB, NULL);
     
     // Skip processing our own messages
     if (origin == config->nodeId) {
@@ -2609,8 +2706,7 @@ int processCborContactMessage(DtnexConfig *config, unsigned char *nonce, time_t 
  */
 int processCborMetadataMessage(DtnexConfig *config, unsigned char *nonce, time_t timestamp, time_t expireTime,
                               unsigned long origin, unsigned long from, StructuredMetadata *metadata) {
-    debug_log(config, "📥 [CBOR] Metadata from %lu: Node %lu ('%s', '%s')", 
-        from, metadata->nodeId, metadata->name, metadata->contact);
+    log_message_received(config, origin, from, "metadata", metadata->nodeId, 0, metadata->name);
     
     // Skip processing our own messages
     if (origin == config->nodeId) {
@@ -2658,8 +2754,7 @@ void forwardCborContactMessage(DtnexConfig *config, unsigned char *originalNonce
     unsigned char cborBuffer[MAX_CBOR_BUFFER];
     int messageSize;
     
-    debug_log(config, "🔄 Forwarding CBOR contact message: Origin=%lu, From=%lu, Link=%lu↔%lu", 
-        origin, from, contact->nodeA, contact->nodeB);
+    // Forwarding contact message - individual forwards logged in the loop
     
     // Get current neighbor list
     getplanlist(config, plans, &planCount);
@@ -2714,8 +2809,8 @@ void forwardCborContactMessage(DtnexConfig *config, unsigned char *originalNonce
         sprintf(destEid, "ipn:%lu.%s", neighborId, config->serviceNr);
         sendCborBundle(destEid, cborBuffer, bytesWritten, config->bundleTTL);
         
-        debug_log(config, "🔄 [CBOR %db] Forwarded contact to %s: Link %lu↔%lu", 
-            bytesWritten, destEid, forwardContact.nodeA, forwardContact.nodeB);
+        log_message_forwarded(config, origin, from, neighborId, "contact", 
+                             contact->nodeA, contact->nodeB, NULL);
     }
 }
 
@@ -2730,8 +2825,7 @@ void forwardCborMetadataMessage(DtnexConfig *config, unsigned char *originalNonc
     unsigned char cborBuffer[MAX_CBOR_BUFFER];
     int messageSize;
     
-    debug_log(config, "🔄 Forwarding CBOR metadata message: Origin=%lu, From=%lu, Node=%lu", 
-        origin, from, metadata->nodeId);
+    // Forwarding metadata message - individual forwards logged in the loop
     
     // Get current neighbor list
     getplanlist(config, plans, &planCount);
@@ -2793,7 +2887,7 @@ void forwardCborMetadataMessage(DtnexConfig *config, unsigned char *originalNonc
         sprintf(destEid, "ipn:%lu.%s", neighborId, config->serviceNr);
         sendCborBundle(destEid, cborBuffer, bytesWritten, config->bundleTTL);
         
-        debug_log(config, "🔄 [CBOR %db] Forwarded metadata to %s: Node %lu ('%s')", 
-            bytesWritten, destEid, metadata->nodeId, metadata->name);
+        log_message_forwarded(config, origin, from, neighborId, "metadata", 
+                             metadata->nodeId, 0, metadata->name);
     }
 }

@@ -14,6 +14,7 @@
 
 // Global variables
 volatile int running = 1;
+volatile int ionConnected = 0;  // Global ION connection status
 BpSAP sap;
 Sdr sdr;
 HashCache hashCache[MAX_HASH_CACHE];
@@ -340,8 +341,10 @@ int init(DtnexConfig *config) {
     
     // Try to connect to ION, but don't fail if unavailable
     if (tryConnectToIon(config) == 0) {
+        ionConnected = 1;
         dtnex_log("✅ Successfully connected to ION");
     } else {
+        ionConnected = 0;
         dtnex_log("⚠️ ION not available - will retry every minute");
         // Set default node ID for service mode
         config->nodeId = 0;
@@ -810,7 +813,25 @@ void getContacts(DtnexConfig *config) {
     // Get the SDR database
     sdr = getIonsdr();
     if (sdr == NULL) {
-        dtnex_log("Error: can't get ION SDR");
+        dtnex_log("⚠️  Cannot access ION SDR - ION may have been restarted");
+        dtnex_log("🔄 Attempting to reinitialize ION connection...");
+        
+        // Close current SAP if it exists
+        if (sap != NULL) {
+            bp_close(sap);
+            sap = NULL;
+        }
+        
+        // Mark as disconnected
+        ionConnected = 0;
+        
+        // Try to reconnect to ION
+        if (tryConnectToIon(config) == 0) {
+            ionConnected = 1;
+            dtnex_log("✅ Successfully reconnected to ION");
+        } else {
+            dtnex_log("❌ Failed to reconnect to ION - will retry later");
+        }
         return;
     }
     
@@ -819,23 +840,75 @@ void getContacts(DtnexConfig *config) {
     
     // Start transaction for memory safety
     if (sdr_begin_xn(sdr) < 0) {
-        dtnex_log("Error starting SDR transaction");
+        dtnex_log("⚠️  Cannot start SDR transaction - ION may have been restarted");
+        dtnex_log("🔄 Attempting to reinitialize ION connection...");
+        
+        // Close current SAP if it exists
+        if (sap != NULL) {
+            bp_close(sap);
+            sap = NULL;
+        }
+        
+        // Mark as disconnected
+        ionConnected = 0;
+        
+        // Try to reconnect to ION
+        if (tryConnectToIon(config) == 0) {
+            ionConnected = 1;
+            dtnex_log("✅ Successfully reconnected to ION");
+        } else {
+            dtnex_log("❌ Failed to reconnect to ION - will retry later");
+        }
         return;
     }
     
     // Get ion volatile database
     ionvdb = getIonVdb();
     if (ionvdb == NULL) {
-        dtnex_log("Error: can't get ION volatile database");
+        dtnex_log("⚠️  Cannot access ION volatile database - ION may have been restarted");
         sdr_exit_xn(sdr);
+        
+        // Close current SAP if it exists
+        if (sap != NULL) {
+            bp_close(sap);
+            sap = NULL;
+        }
+        
+        // Mark as disconnected
+        ionConnected = 0;
+        
+        // Try to reconnect to ION
+        if (tryConnectToIon(config) == 0) {
+            ionConnected = 1;
+            dtnex_log("✅ Successfully reconnected to ION");
+        } else {
+            dtnex_log("❌ Failed to reconnect to ION - will retry later");
+        }
         return;
     }
     
     // Get the working memory
     ionwm = getIonwm();
     if (ionwm == NULL) {
-        dtnex_log("Error: can't get ION working memory");
+        dtnex_log("⚠️  Cannot access ION working memory - ION may have been restarted");
         sdr_exit_xn(sdr);
+        
+        // Close current SAP if it exists
+        if (sap != NULL) {
+            bp_close(sap);
+            sap = NULL;
+        }
+        
+        // Mark as disconnected
+        ionConnected = 0;
+        
+        // Try to reconnect to ION
+        if (tryConnectToIon(config) == 0) {
+            ionConnected = 1;
+            dtnex_log("✅ Successfully reconnected to ION");
+        } else {
+            dtnex_log("❌ Failed to reconnect to ION - will retry later");
+        }
         return;
     }
     
@@ -909,6 +982,27 @@ void getContacts(DtnexConfig *config) {
     
     // End the transaction
     sdr_exit_xn(sdr);
+    
+    // Check if ION might have been restarted (no contacts found)
+    if (contactCount == 0) {
+        dtnex_log("⚠️  No contacts found - ION may have been restarted");
+        dtnex_log("🔄 Attempting to reinitialize ION connection...");
+        
+        // Close current SAP if it exists
+        if (sap != NULL) {
+            bp_close(sap);
+            sap = NULL;
+        }
+        
+        // Try to reconnect to ION
+        if (tryConnectToIon(config) == 0) {
+            ionConnected = 1;
+            dtnex_log("✅ Successfully reconnected to ION");
+            // Don't recursively call getContacts - let the main loop handle next update
+        } else {
+            dtnex_log("❌ Failed to reconnect to ION - will retry later");
+        }
+    }
     
     if (config->debugMode) {
         // Show detailed summary in debug mode
@@ -1460,33 +1554,41 @@ int main(int argc, char **argv) {
         return 1;
     }
     
-    // Initialize bpecho service
-    if (initBpechoService(&config, &bpechoState) < 0) {
-        dtnex_log("⚠️ Bpecho service initialization failed, continuing without it");
-    } else {
-        // Create bpecho service thread
-        if (pthread_create(&bpechoThread, NULL, runBpechoService, (void *)&config) != 0) {
-            dtnex_log("⚠️ Failed to create bpecho service thread, continuing without it");
-            // Clean up bpecho resources
-            bp_close(bpechoState.sap);
-            ionStopAttendant(&bpechoState.attendant);
+    // Initialize bpecho service only if ION is connected
+    if (ionConnected) {
+        if (initBpechoService(&config, &bpechoState) < 0) {
+            dtnex_log("⚠️ Bpecho service initialization failed, continuing without it");
         } else {
-            dtnex_log("✅ Bpecho service thread started");
+            // Create bpecho service thread
+            if (pthread_create(&bpechoThread, NULL, runBpechoService, (void *)&config) != 0) {
+                dtnex_log("⚠️ Failed to create bpecho service thread, continuing without it");
+                // Clean up bpecho resources
+                bp_close(bpechoState.sap);
+                ionStopAttendant(&bpechoState.attendant);
+            } else {
+                dtnex_log("✅ Bpecho service thread started");
+            }
         }
+    } else {
+        dtnex_log("⚠️ Skipping bpecho service initialization (ION not connected)");
     }
     
-    // Initialize bundle reception service
-    if (initBundleReception(&config, &bundleReceptionState) < 0) {
-        dtnex_log("❌ Bundle reception service initialization failed");
-        return 1;
-    } else {
-        // Create bundle reception thread
-        if (pthread_create(&bundleReceptionState.thread, NULL, runBundleReception, (void *)&bundleReceptionState) != 0) {
-            dtnex_log("❌ Failed to create bundle reception thread");
+    // Initialize bundle reception service only if ION is connected
+    if (ionConnected) {
+        if (initBundleReception(&config, &bundleReceptionState) < 0) {
+            dtnex_log("❌ Bundle reception service initialization failed");
             return 1;
         } else {
-            dtnex_log("✅ Bundle reception thread started");
+            // Create bundle reception thread
+            if (pthread_create(&bundleReceptionState.thread, NULL, runBundleReception, (void *)&bundleReceptionState) != 0) {
+                dtnex_log("❌ Failed to create bundle reception thread");
+                return 1;
+            } else {
+                dtnex_log("✅ Bundle reception thread started");
+            }
         }
+    } else {
+        dtnex_log("⚠️ Skipping bundle reception service initialization (ION not connected)");
     }
     
     dtnex_log("DTNEXC running - Ctrl+C to exit");
@@ -1911,7 +2013,10 @@ void eventDrivenLoop(DtnexConfig *config) {
     time_t nextIonRetry = 0;
     time_t currentTime;
     int messageReceived;
-    int ionConnected = (sap != NULL && config->nodeId != 0);
+    // Use global ionConnected flag, but also verify current state
+    if (!ionConnected) {
+        ionConnected = (sap != NULL && config->nodeId != 0);
+    }
     
     dtnex_log("🔄 Starting event-driven operation (update every %d minutes)", config->updateInterval / 60);
     

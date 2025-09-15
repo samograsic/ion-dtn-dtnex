@@ -47,7 +47,7 @@ extern int removeEndpoint(char *endpointName);
 char *strptime(const char *s, const char *format, struct tm *tm);
 
 // Version information
-#define DTNEXC_VERSION "2.26"
+#define DTNEXC_VERSION "2.28"
 #define DTNEXC_BUILD_DATE __DATE__
 #define DTNEXC_BUILD_TIME __TIME__
 
@@ -235,6 +235,7 @@ void stopBundleReception(BundleReceptionState *state);
 
 // Global variables
 extern volatile int running;
+extern volatile int ionConnected;  // Global ION connection status
 extern BpSAP sap;
 extern Sdr sdr;
 extern NonceCache nonceCache[MAX_HASH_CACHE]; // Reuse same size as hash cache

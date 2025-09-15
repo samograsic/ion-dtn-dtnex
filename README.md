@@ -207,3 +207,205 @@ RestartSec=10
 
 [Install]
 WantedBy=multi-user.target
+EOF
+
+# Enable and start the service
+sudo systemctl enable dtnex
+sudo systemctl start dtnex
+```
+
+## CBOR Message Format Specification
+
+DTNEX uses CBOR (Compact Binary Object Representation) for efficient, authenticated message exchange between DTN nodes. The protocol supports two primary message types and can be extended for custom applications.
+
+### Protocol Overview
+
+- **Protocol Version**: 2
+- **Message Format**: CBOR arrays with HMAC authentication
+- **Authentication**: HMAC-SHA256 (truncated to 64 bits for efficiency)
+- **Replay Protection**: 3-byte nonce with origin node tracking
+- **Transport**: ION Bundle Protocol v7 (service 12160)
+
+### Message Structure
+
+All DTNEX messages follow this general CBOR array format:
+
+```
+[version, type, timestamp, expireTime, origin, from, nonce, messageData, hmac]
+```
+
+#### Common Header Fields
+
+| Field | Type | Description | Size |
+|-------|------|-------------|------|
+| `version` | Integer | Protocol version (currently 2) | 1 byte |
+| `type` | Integer | Message type (1=contact, 2=metadata) | 1 byte |
+| `timestamp` | Integer | Unix timestamp when message was created | 4 bytes |
+| `expireTime` | Integer | Unix timestamp when message expires | 4 bytes |
+| `origin` | Integer | Node ID that originally created the message | 4-8 bytes |
+| `from` | Integer | Node ID that sent this message (may differ from origin for forwarded messages) | 4-8 bytes |
+| `nonce` | Byte String | 3-byte random nonce for replay protection | 3 bytes |
+| `messageData` | Array/Map | Type-specific message payload | Variable |
+| `hmac` | Byte String | 8-byte HMAC-SHA256 authentication tag | 8 bytes |
+
+### Contact Messages (Type 1)
+
+Contact messages distribute network connectivity information between DTN nodes.
+
+#### CBOR Structure
+```
+[2, 1, timestamp, expireTime, origin, from, nonce, [nodeA, nodeB, duration, datarate, reliability], hmac]
+```
+
+#### Message Data Array
+```cbor
+[nodeA, nodeB, duration, datarate, reliability]
+```
+
+| Field | Type | Description | Example |
+|-------|------|-------------|---------|
+| `nodeA` | Integer | First node ID in the contact pair | 268484800 |
+| `nodeB` | Integer | Second node ID in the contact pair | 268484801 |
+| `duration` | Integer | Contact duration in minutes (0-65535) | 1440 |
+| `datarate` | Integer | Data rate in bytes per second | 100000 |
+| `reliability` | Integer | Reliability factor (typically 1-100) | 100 |
+
+#### Example Contact Message
+```json
+[
+  2,                    // Protocol version
+  1,                    // Contact message type
+  1694885400,          // Timestamp (Unix epoch)
+  1694887200,          // Expire time
+  268484800,           // Origin node ID
+  268484800,           // From node ID (same as origin if not forwarded)
+  h'A1B2C3',           // 3-byte nonce
+  [                    // Contact data
+    268484800,         // Node A
+    268484801,         // Node B  
+    1440,              // Duration (24 hours in minutes)
+    100000,            // Data rate (100 KB/s)
+    100                // Reliability (100%)
+  ],
+  h'1234567890ABCDEF'  // 8-byte HMAC
+]
+```
+
+### Metadata Messages (Type 2)
+
+Metadata messages share node descriptions, GPS coordinates, and operator contact information.
+
+#### CBOR Structure
+```
+[2, 2, timestamp, expireTime, origin, from, nonce, metadataMap, hmac]
+```
+
+#### Metadata Map Structure
+```cbor
+{
+  1: nodeId,        // Node identifier
+  2: "NodeName",    // Human-readable node name (max 24 chars)
+  3: "contact@email.com",  // Contact information (max 24 chars)
+  4: latitude,      // Optional: GPS latitude * 1000000 (integer)
+  5: longitude      // Optional: GPS longitude * 1000000 (integer)
+}
+```
+
+| Map Key | Field | Type | Description | Example |
+|---------|-------|------|-------------|---------|
+| 1 | `nodeId` | Integer | Node identifier | 268484800 |
+| 2 | `name` | String | Node name (max 24 chars) | "DTNEX-Gateway" |
+| 3 | `contact` | String | Contact info (max 24 chars) | "ops@example.com" |
+| 4 | `latitude` | Integer | GPS latitude × 1,000,000 (optional) | 59334591 |
+| 5 | `longitude` | Integer | GPS longitude × 1,000,000 (optional) | 18063240 |
+
+#### Example Metadata Message
+```json
+[
+  2,                    // Protocol version
+  2,                    // Metadata message type
+  1694885400,          // Timestamp
+  1694887200,          // Expire time
+  268484800,           // Origin node ID
+  268484800,           // From node ID
+  h'D4E5F6',           // 3-byte nonce
+  {                    // Metadata map
+    1: 268484800,      // Node ID
+    2: "Gateway-Node", // Node name
+    3: "admin@net.com",// Contact email
+    4: 59334591,       // Latitude (Stockholm)
+    5: 18063240        // Longitude (Stockholm)
+  },
+  h'FEDCBA0987654321'  // 8-byte HMAC
+]
+```
+
+### Message Authentication
+
+All messages include HMAC-SHA256 authentication using a pre-shared network key.
+
+#### HMAC Calculation
+1. **Key Preparation**: Pre-shared network key (configured in `dtnex.conf`)
+2. **Message Data**: Everything except the HMAC field
+3. **HMAC Computation**: HMAC-SHA256 of message data using the network key
+4. **Truncation**: First 8 bytes of the HMAC for space efficiency
+
+#### Replay Protection
+- **Nonce**: 3-byte random value included in each message
+- **Cache**: Each node maintains a cache of seen (nonce, origin) pairs
+- **Validation**: Messages with duplicate (nonce, origin) pairs are rejected
+
+### Message Forwarding
+
+DTNEX implements epidemic-style message forwarding:
+
+1. **Reception**: Node receives and validates message
+2. **Processing**: Extracts and stores contact/metadata information
+3. **Forwarding**: Forwards message to all neighbors except origin and sender
+4. **Flood Control**: Nonce-based duplicate detection prevents loops
+
+### Custom Message Types
+
+The CBOR protocol can be extended for custom applications:
+
+#### Adding New Message Types
+1. **Define Type Number**: Choose unused integer (3, 4, 5, ...)
+2. **Design Message Data**: Create CBOR array or map structure
+3. **Implement Handlers**: Add encoding/decoding functions
+4. **Authentication**: Use same HMAC scheme for security
+
+#### Example Custom Message (Type 3)
+```json
+[
+  2,                    // Protocol version
+  3,                    // Custom message type
+  1694885400,          // Timestamp
+  1694887200,          // Expire time
+  268484800,           // Origin node ID
+  268484800,           // From node ID
+  h'789ABC',           // 3-byte nonce
+  {                    // Custom data map
+    "sensor": "temperature",
+    "value": 23.5,
+    "unit": "celsius",
+    "location": "Building-A"
+  },
+  h'1122334455667788'  // 8-byte HMAC
+]
+```
+
+### Performance Characteristics
+
+- **Contact Message Size**: ~45-65 bytes (typical)
+- **Metadata Message Size**: ~55-85 bytes (without GPS), ~65-95 bytes (with GPS)
+- **Maximum Message Size**: 128 bytes (configurable via `MAX_CBOR_BUFFER`)
+- **Authentication Overhead**: 8 bytes HMAC + 3 bytes nonce = 11 bytes
+- **Encoding Efficiency**: CBOR provides ~20-40% size reduction vs JSON
+
+### Security Considerations
+
+- **Pre-shared Keys**: Use strong, randomly generated network keys
+- **Key Distribution**: Secure key distribution required for network access
+- **Message Expiry**: Configure appropriate `contactLifetime` values
+- **Nonce Entropy**: Ensure good randomness for nonce generation
+- **Replay Window**: Balance cache size with replay protection needs

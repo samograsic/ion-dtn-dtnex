@@ -11,10 +11,14 @@
 #include <fcntl.h>
 #include <ctype.h>
 #include <errno.h>
+#include <unistd.h>  // for execv
 
 // Global variables
 volatile int running = 1;
 volatile int ionConnected = 0;  // Global ION connection status
+volatile int ionRestartDetected = 0;  // Flag to trigger complete restart
+static char **original_argv = NULL;  // Store original argv for restart
+static int original_argc = 0;        // Store original argc for restart
 BpSAP sap;
 Sdr sdr;
 HashCache hashCache[MAX_HASH_CACHE];
@@ -77,10 +81,10 @@ void log_message_sent(DtnexConfig *config, unsigned long origin, unsigned long t
     if (!config->debugMode) return;
     
     if (strcmp(type, "contact") == 0) {
-        printf("\033[33m[SENT] %lu→%lu→%lu: Contact(%lu↔%lu)\033[0m\n", 
+        printf("\033[33m[SENT] Origin:%lu, Source:%lu, Dest:%lu: Contact(%lu↔%lu)\033[0m\n", 
                origin, config->nodeId, to, nodeA, nodeB);
     } else if (strcmp(type, "metadata") == 0) {
-        printf("\033[33m[SENT] %lu→%lu→%lu: Metadata(%lu:%s)\033[0m\n",
+        printf("\033[33m[SENT] Origin:%lu, Source:%lu, Dest:%lu: Metadata(%lu:%s)\033[0m\n",
                origin, config->nodeId, to, nodeA, metadata ? metadata : "?");
     }
     fflush(stdout);
@@ -92,10 +96,10 @@ void log_message_received(DtnexConfig *config, unsigned long origin, unsigned lo
     if (!config->debugMode) return;
     
     if (strcmp(type, "contact") == 0) {
-        printf("\033[32m[RECV] %lu→%lu→%lu: Contact(%lu↔%lu)\033[0m\n",
+        printf("\033[32m[RECV] Origin:%lu, Source:%lu, Dest:%lu: Contact(%lu↔%lu)\033[0m\n",
                origin, from, config->nodeId, nodeA, nodeB);
     } else if (strcmp(type, "metadata") == 0) {
-        printf("\033[32m[RECV] %lu→%lu→%lu: Metadata(%lu:%s)\033[0m\n",
+        printf("\033[32m[RECV] Origin:%lu, Source:%lu, Dest:%lu: Metadata(%lu:%s)\033[0m\n",
                origin, from, config->nodeId, nodeA, metadata ? metadata : "?");
     }
     fflush(stdout);
@@ -107,10 +111,10 @@ void log_message_forwarded(DtnexConfig *config, unsigned long origin, unsigned l
     if (!config->debugMode) return;
     
     if (strcmp(type, "contact") == 0) {
-        printf("\033[35m[FRWD] %lu→%lu→%lu: Contact(%lu↔%lu)\033[0m\n",
+        printf("\033[35m[FRWD] Origin:%lu, Source:%lu, Dest:%lu: Contact(%lu↔%lu)\033[0m\n",
                origin, from, to, nodeA, nodeB);
     } else if (strcmp(type, "metadata") == 0) {
-        printf("\033[35m[FRWD] %lu→%lu→%lu: Metadata(%lu:%s)\033[0m\n",
+        printf("\033[35m[FRWD] Origin:%lu, Source:%lu, Dest:%lu: Metadata(%lu:%s)\033[0m\n",
                origin, from, to, nodeA, metadata ? metadata : "?");
     }
     fflush(stdout);
@@ -146,6 +150,8 @@ void loadConfig(DtnexConfig *config) {
     config->createGraph = 0;
     strcpy(config->graphFile, "contactGraph.png");
     config->noMetadataExchange = 1; // Default to not exchanging own metadata if no config file
+    config->debugMode = 0; // Default to no debug output
+    config->serviceMode = 0; // Default to interactive mode
     config->gpsLatitude = 0.0;
     config->gpsLongitude = 0.0;
     config->hasGpsCoordinates = 0;
@@ -216,6 +222,18 @@ void loadConfig(DtnexConfig *config) {
                 } else if (strcmp(key, "noMetadataExchange") == 0) {
                     if (strcmp(value, "true") == 0) {
                         config->noMetadataExchange = 1;
+                    }
+                } else if (strcmp(key, "debugMode") == 0) {
+                    if (strcmp(value, "true") == 0 || strcmp(value, "1") == 0) {
+                        config->debugMode = 1;
+                    } else {
+                        config->debugMode = 0;
+                    }
+                } else if (strcmp(key, "serviceMode") == 0) {
+                    if (strcmp(value, "true") == 0 || strcmp(value, "1") == 0) {
+                        config->serviceMode = 1;
+                    } else {
+                        config->serviceMode = 0;
                     }
                 } else if (strcmp(key, "gpsLatitude") == 0) {
                     config->gpsLatitude = atof(value);
@@ -668,7 +686,7 @@ void updateNodeMetadata(DtnexConfig *config, unsigned long nodeId, const char *m
             strncpy(nodeMetadataList[i].metadata, metadata, sizeof(nodeMetadataList[i].metadata) - 1);
             nodeMetadataList[i].metadata[sizeof(nodeMetadataList[i].metadata) - 1] = '\0';
             nodeFound = 1;
-            dtnex_log("\033[36m[INFO] Updated metadata for node %lu: \"%s\"\033[0m", 
+            debug_log(config, "[INFO] Updated metadata for node %lu: \"%s\"", 
                       nodeId, nodeMetadataList[i].metadata);
             break;
         }
@@ -680,7 +698,7 @@ void updateNodeMetadata(DtnexConfig *config, unsigned long nodeId, const char *m
         strncpy(nodeMetadataList[nodeMetadataCount].metadata, metadata, 
                 sizeof(nodeMetadataList[nodeMetadataCount].metadata) - 1);
         nodeMetadataList[nodeMetadataCount].metadata[sizeof(nodeMetadataList[nodeMetadataCount].metadata) - 1] = '\0';
-        dtnex_log("\033[36m[INFO] Added new metadata for node %lu: \"%s\"\033[0m", 
+        debug_log(config, "[INFO] Added new metadata for node %lu: \"%s\"", 
                   nodeId, nodeMetadataList[nodeMetadataCount].metadata);
         nodeMetadataCount++;
     }
@@ -693,19 +711,19 @@ void updateNodeMetadata(DtnexConfig *config, unsigned long nodeId, const char *m
                 fprintf(metadataFile, "%lu:%s\n", nodeMetadataList[i].nodeId, nodeMetadataList[i].metadata);
             }
             fclose(metadataFile);
-            dtnex_log("\033[36m[INFO] Updated nodesmetadata.txt for graph generation\033[0m");
+            debug_log(config, "[INFO] Updated nodesmetadata.txt for graph generation");
         }
     }
     
-    // Print a complete list of all metadata after receiving and processing
-    dtnex_log("\033[36m======== COLLECTED NODE METADATA (%d nodes) ========\033[0m", nodeMetadataCount);
-    dtnex_log("\033[36mNODE ID    | METADATA\033[0m");
-    dtnex_log("\033[36m----------------------------------------\033[0m");
+    // Print a complete list of all metadata after receiving and processing (debug mode only)
+    debug_log(config, "======== COLLECTED NODE METADATA (%d nodes) ========", nodeMetadataCount);
+    debug_log(config, "NODE ID    | METADATA");
+    debug_log(config, "----------------------------------------");
     for (i = 0; i < nodeMetadataCount; i++) {
-        dtnex_log("\033[36m%-10lu | %s\033[0m", 
+        debug_log(config, "%-10lu | %s", 
                 nodeMetadataList[i].nodeId, nodeMetadataList[i].metadata);
     }
-    dtnex_log("\033[36m========================================\033[0m");
+    debug_log(config, "========================================");
 }
 
 /**
@@ -750,39 +768,45 @@ void signalHandler(int sig) {
     // Set global flag to stop the main loop
     running = 0;
     
-    // Interrupt any pending receives if we have an open endpoint
-    if (sap != NULL) {
+    // Only perform ION cleanup if we're actually connected to ION
+    if (ionConnected && sap != NULL) {
+        // Interrupt any pending receives if we have an open endpoint
         dtnex_log("Interrupting BP endpoint");
         bp_interrupt(sap);
-    }
-    
-    // Stop bundle reception service
-    stopBundleReception(&bundleReceptionState);
-    
-    // Stop bpecho service
-    bpechoState.running = 0;
-    if (bpechoState.sap != NULL) {
-        bp_interrupt(bpechoState.sap);
-        ionPauseAttendant(&bpechoState.attendant);
-    }
-    
-    // Force cleanup and exit for all signals since main loop might be blocked
-    dtnex_log("Performing cleanup and immediate exit...");
-    
-    // Close endpoints directly
-    if (sap != NULL) {
+        
+        // Stop bundle reception service
+        stopBundleReception(&bundleReceptionState);
+        
+        // Stop bpecho service
+        bpechoState.running = 0;
+        if (bpechoState.sap != NULL) {
+            bp_interrupt(bpechoState.sap);
+            ionPauseAttendant(&bpechoState.attendant);
+        }
+        
+        // Force cleanup and exit for all signals since main loop might be blocked
+        dtnex_log("Performing cleanup and immediate exit...");
+        
+        // Close endpoints directly
         dtnex_log("🔌 Closing BP endpoint");
         bp_close(sap);
+        sap = NULL;
+        
+        // Close bpecho endpoint if it exists
+        if (bpechoState.sap != NULL) {
+            bp_close(bpechoState.sap);
+            bpechoState.sap = NULL;
+        }
+        
+        // Detach from BP
+        dtnex_log("🧹 Detaching from ION BP system");
+        bp_detach();
+    } else {
+        dtnex_log("Performing cleanup without ION detachment (not connected)...");
+        // Reset states even if not connected to ION
+        bpechoState.running = 0;
+        bundleReceptionState.running = 0;
     }
-    
-    // Close bpecho endpoint if it exists
-    if (bpechoState.sap != NULL) {
-        bp_close(bpechoState.sap);
-    }
-    
-    // Detach from BP
-    dtnex_log("🧹 Detaching from ION BP system");
-    bp_detach();
     
     dtnex_log("DTNEXC shutdown complete");
     exit(0);
@@ -825,13 +849,8 @@ void getContacts(DtnexConfig *config) {
         // Mark as disconnected
         ionConnected = 0;
         
-        // Try to reconnect to ION
-        if (tryConnectToIon(config) == 0) {
-            ionConnected = 1;
-            dtnex_log("✅ Successfully reconnected to ION");
-        } else {
-            dtnex_log("❌ Failed to reconnect to ION - will retry later");
-        }
+        // ION restart detected - completely restart DTNEX
+        restartDtnex(config);
         return;
     }
     
@@ -852,13 +871,8 @@ void getContacts(DtnexConfig *config) {
         // Mark as disconnected
         ionConnected = 0;
         
-        // Try to reconnect to ION
-        if (tryConnectToIon(config) == 0) {
-            ionConnected = 1;
-            dtnex_log("✅ Successfully reconnected to ION");
-        } else {
-            dtnex_log("❌ Failed to reconnect to ION - will retry later");
-        }
+        // ION restart detected - completely restart DTNEX
+        restartDtnex(config);
         return;
     }
     
@@ -877,13 +891,8 @@ void getContacts(DtnexConfig *config) {
         // Mark as disconnected
         ionConnected = 0;
         
-        // Try to reconnect to ION
-        if (tryConnectToIon(config) == 0) {
-            ionConnected = 1;
-            dtnex_log("✅ Successfully reconnected to ION");
-        } else {
-            dtnex_log("❌ Failed to reconnect to ION - will retry later");
-        }
+        // ION restart detected - completely restart DTNEX
+        restartDtnex(config);
         return;
     }
     
@@ -902,13 +911,8 @@ void getContacts(DtnexConfig *config) {
         // Mark as disconnected
         ionConnected = 0;
         
-        // Try to reconnect to ION
-        if (tryConnectToIon(config) == 0) {
-            ionConnected = 1;
-            dtnex_log("✅ Successfully reconnected to ION");
-        } else {
-            dtnex_log("❌ Failed to reconnect to ION - will retry later");
-        }
+        // ION restart detected - completely restart DTNEX
+        restartDtnex(config);
         return;
     }
     
@@ -986,22 +990,8 @@ void getContacts(DtnexConfig *config) {
     // Check if ION might have been restarted (no contacts found)
     if (contactCount == 0) {
         dtnex_log("⚠️  No contacts found - ION may have been restarted");
-        dtnex_log("🔄 Attempting to reinitialize ION connection...");
-        
-        // Close current SAP if it exists
-        if (sap != NULL) {
-            bp_close(sap);
-            sap = NULL;
-        }
-        
-        // Try to reconnect to ION
-        if (tryConnectToIon(config) == 0) {
-            ionConnected = 1;
-            dtnex_log("✅ Successfully reconnected to ION");
-            // Don't recursively call getContacts - let the main loop handle next update
-        } else {
-            dtnex_log("❌ Failed to reconnect to ION - will retry later");
-        }
+        // ION restart detected - completely restart DTNEX
+        restartDtnex(config);
     }
     
     if (config->debugMode) {
@@ -1015,6 +1005,11 @@ void getContacts(DtnexConfig *config) {
     } else {
         // Show simple update in normal mode
         log_contact_update(config, contactCount);
+    }
+    
+    // Generate graph after every contact printout as requested
+    if (config->createGraph) {
+        createGraph(config);
     }
 }
 
@@ -1049,19 +1044,8 @@ void createGraph(DtnexConfig *config) {
     fprintf(graphFile, "// dot -Tpng %s -o %s\n", graphvizFile, config->graphFile);
     fprintf(graphFile, "// You can also use other formats like: -Tsvg, -Tpdf, -Tjpg\n\n");
     
-    // Write the graph header with new style - dark blue background
-    fprintf(graphFile, "digraph G {\n");
-    fprintf(graphFile, "    layout=neato;\n");
-    fprintf(graphFile, "    overlap=false;\n");
-    fprintf(graphFile, "    bgcolor=\"#1c2333\";\n\n");    // Dark blue/slate background approximating rgba(28, 35, 51, 0.9)
-    
-    // Add global node and edge styling
-    fprintf(graphFile, "    // Node formatting\n");
-    fprintf(graphFile, "    node [style=\"filled\", color=\"#4a8bfc\", fillcolor=\"#1c2333\", fontcolor=\"white\"];\n\n");
-    
-    // Edge formatting
-    fprintf(graphFile, "    // Edge formatting\n");
-    fprintf(graphFile, "    edge [color=\"#dddddd\", penwidth=1.5];\n\n");
+    // Write the graph header (bash-compatible format)
+    fprintf(graphFile, "digraph G { layout=neato; overlap=false;\n");
     
     // Add nodes to the graph from in-memory metadata list
     // Note: The nodeMetadataList is kept in memory and only written to nodesmetadata.txt
@@ -1090,8 +1074,8 @@ void createGraph(DtnexConfig *config) {
         }
         *dst = '\0';
         
-        // Add the node with new styling (blue node ID, white metadata)
-        fprintf(graphFile, "    \"ipn:%lu\" [label=< <FONT POINT-SIZE=\"14\" FACE=\"Arial\" COLOR=\"#4a8bfc\"><B>ipn:%lu</B></FONT><BR/><FONT POINT-SIZE=\"10\" FACE=\"Arial\" COLOR=\"white\">%s</FONT>>];\n", 
+        // Add the node with bash-compatible styling
+        fprintf(graphFile, "\"ipn:%lu\" [label=< <FONT POINT-SIZE=\"14\" FACE=\"Arial\" COLOR=\"darkred\"><B>ipn:%lu</B></FONT><BR/><FONT POINT-SIZE=\"10\" FACE=\"Arial\" COLOR=\"blue\">%s</FONT>>];\n", 
                 nodeMetadataList[i].nodeId, nodeMetadataList[i].nodeId, escapedMetadata);
     }
     
@@ -1118,59 +1102,64 @@ void createGraph(DtnexConfig *config) {
     }
     *dst = '\0';
     
-    // Special styling for local node - use a slightly different color to highlight it
-    fprintf(graphFile, "    \"ipn:%lu\" [label=< <FONT POINT-SIZE=\"14\" FACE=\"Arial\" COLOR=\"#4a8bfc\"><B>ipn:%lu</B></FONT><BR/><FONT POINT-SIZE=\"10\" FACE=\"Arial\" COLOR=\"white\">%s</FONT>>, fillcolor=\"#232942\"];\n", 
+    // Add local node with bash-compatible formatting
+    fprintf(graphFile, "\"ipn:%lu\" [label=< <FONT POINT-SIZE=\"14\" FACE=\"Arial\" COLOR=\"darkred\"><B>ipn:%lu</B></FONT><BR/><FONT POINT-SIZE=\"10\" FACE=\"Arial\" COLOR=\"blue\">%s</FONT>>];\n", 
             config->nodeId, config->nodeId, escapedMetadata);
     
-    // Use a direct API approach which gives the same contacts that ionadmin shows
+    // Get contacts using ionadmin command (same as bash version)
     int contactCount = 0;
+    debug_log(config, "Extracting contacts using ionadmin command...");
     
-    // Use direct API access to get contacts
-    Sdr sdr = getIonsdr();
-    if (sdr) {
-        if (sdr_begin_xn(sdr) >= 0) {
-            IonVdb *ionvdb = getIonVdb();
-            if (ionvdb && ionvdb->contactIndex != 0) {
-                PsmPartition ionwm = getIonwm();
-                if (ionwm) {
-                    // Use RBT traversal as it matches ionadmin output ordering
-                    for (PsmAddress elt = sm_rbt_first(ionwm, ionvdb->contactIndex); elt; elt = sm_rbt_next(ionwm, elt)) {
-                        PsmAddress addr = sm_rbt_data(ionwm, elt);
-                        if (addr) {
-                            IonCXref *contact = (IonCXref *)psp(ionwm, addr);
-                            if (contact) {
-                                // This is what ionadmin 'l contact' shows
-                                unsigned long fromNode = contact->fromNode;
-                                unsigned long toNode = contact->toNode;
-                                
-                                // Only add contacts with valid node numbers
-                                if (fromNode > 0 && toNode > 0) {
-                                    fprintf(graphFile, "\"ipn:%lu\" -> \"ipn:%lu\"\n", fromNode, toNode);
-                                    contactCount++;
-                                }
-                            }
-                        }
+    FILE *ionadmin_pipe = popen("echo 'l contact' | ionadmin 2>/dev/null | grep -o -P '(?<=From).*?(?=is)'", "r");
+    if (ionadmin_pipe) {
+        char line[1024];
+        while (fgets(line, sizeof(line), ionadmin_pipe) != NULL) {
+            // Remove trailing newline
+            line[strcspn(line, "\n")] = 0;
+            
+            if (strlen(line) > 0) {
+                debug_log(config, "Processing contact line: '%s'", line);
+                
+                // Split line into words (same logic as bash version)
+                char *words[20];  // Enough space for all words
+                int wordCount = 0;
+                char *token = strtok(line, " ");
+                while (token != NULL && wordCount < 20) {
+                    words[wordCount++] = token;
+                    token = strtok(NULL, " ");
+                }
+                
+                // In bash version: nodearray[8] and nodearray[11] are the node numbers
+                if (wordCount > 11) {
+                    unsigned long fromNode = atol(words[8]);
+                    unsigned long toNode = atol(words[11]);
+                    
+                    if (fromNode > 0 && toNode > 0) {
+                        fprintf(graphFile, "\"ipn:%lu\" -> \"ipn:%lu\"\n", fromNode, toNode);
+                        contactCount++;
+                        debug_log(config, "Added contact: %lu -> %lu", fromNode, toNode);
                     }
+                } else {
+                    debug_log(config, "Not enough words in contact line (%d words)", wordCount);
                 }
             }
-            sdr_exit_xn(sdr);
         }
+        pclose(ionadmin_pipe);
+    } else {
+        debug_log(config, "Failed to execute ionadmin command");
     }
     
-    // Close the graph
+    // Close the graph (bash-compatible format)
     time(&currentTime);
-    // Use a more explicit format for the label to avoid potential issues with special characters
     char timeStr[32];
-    strftime(timeStr, sizeof(timeStr), "%Y-%m-%d %H:%M:%S", localtime(&currentTime));
-    fprintf(graphFile, "    labelloc=\"t\";\n");
-    fprintf(graphFile, "    label=<<FONT FACE=\"Arial\" COLOR=\"white\">IPNSIG's DTN Network Graph, Updated: %s</FONT>>;\n", timeStr);
-    fprintf(graphFile, "}\n"); // Close the graph with a clean bracket on its own line
+    strftime(timeStr, sizeof(timeStr), "%Y-%m-%d_%H-%M-%S", localtime(&currentTime));
+    fprintf(graphFile, "labelloc=\"t\"; label=\"IPNSIG's DTN Network Graph, Updated:%s\"}\n", timeStr);
     
     // Ensure all data is written and properly close the file
     fflush(graphFile);
     fclose(graphFile);
     
-    dtnex_log("\033[36m[INFO] Graph updated with %d contacts\033[0m", contactCount);
+    dtnex_log("[INFO] Graph file updated with %d contacts: %s", contactCount, graphvizFile);
     
     // Write the metadata list to a file in the same directory as the .gv file
     // Extract the directory path from the graphvizFile
@@ -1210,28 +1199,28 @@ void createGraph(DtnexConfig *config) {
         
         fflush(metadataFile);
         fclose(metadataFile);
-        dtnex_log("\033[36m[INFO] Metadata list written to %s\033[0m", metadataFilePath);
+        debug_log(config, "[INFO] Metadata list written to %s", metadataFilePath);
     } else {
-        dtnex_log("\033[31m[ERROR] Failed to write metadata list to %s\033[0m", metadataFilePath);
+        dtnex_log("[ERROR] Failed to write metadata list to %s", metadataFilePath);
     }
     
-    // Print a complete list of all metadata after graph generation
-    dtnex_log("\033[36m======== METADATA USED FOR GRAPH GENERATION (%d nodes) ========\033[0m", nodeMetadataCount);
-    dtnex_log("\033[36mNODE ID    | METADATA\033[0m");
-    dtnex_log("\033[36m----------------------------------------\033[0m");
+    // Print a complete list of all metadata after graph generation (debug mode only)
+    debug_log(config, "======== METADATA USED FOR GRAPH GENERATION (%d nodes) ========", nodeMetadataCount);
+    debug_log(config, "NODE ID    | METADATA");
+    debug_log(config, "----------------------------------------");
     
     // Print our own node's metadata
-    dtnex_log("\033[36m%-10lu | %s (LOCAL NODE)\033[0m", config->nodeId, config->nodemetadata);
+    debug_log(config, "%-10lu | %s (LOCAL NODE)", config->nodeId, config->nodemetadata);
     
     // Print all other nodes' metadata
     for (i = 0; i < nodeMetadataCount; i++) {
         // Skip our own node as we already printed it
         if (nodeMetadataList[i].nodeId != config->nodeId) {
-            dtnex_log("\033[36m%-10lu | %s\033[0m", 
+            debug_log(config, "%-10lu | %s", 
                     nodeMetadataList[i].nodeId, nodeMetadataList[i].metadata);
         }
     }
-    dtnex_log("\033[36m========================================\033[0m");
+    debug_log(config, "========================================");
 }
 
 
@@ -1514,8 +1503,8 @@ void *runBundleReception(void *arg) {
 void stopBundleReception(BundleReceptionState *state) {
     if (state) {
         state->running = 0;
-        // Interrupt the blocking receive call
-        if (sap) {
+        // Interrupt the blocking receive call only if ION is connected
+        if (sap && ionConnected) {
             bp_interrupt(sap);
         }
     }
@@ -1526,6 +1515,10 @@ void stopBundleReception(BundleReceptionState *state) {
  */
 int main(int argc, char **argv) {
     DtnexConfig config;
+    
+    // Store original arguments for potential restart
+    original_argc = argc;
+    original_argv = argv;
     
     // Set up signal handlers for clean shutdown with signal masking
     struct sigaction sa;
@@ -1706,26 +1699,29 @@ int calculateHmac(const unsigned char *message, int msgLen, const char *key, uns
 /**
  * Verify HMAC
  */
-int verifyHmac(const unsigned char *message, int msgLen, const unsigned char *receivedHmac, const char *key) {
+int verifyHmac(DtnexConfig *config, const unsigned char *message, int msgLen, const unsigned char *receivedHmac, const char *key) {
     unsigned char calculatedHmac[DTNEX_HMAC_SIZE];
     calculateHmac(message, msgLen, key, calculatedHmac);
     
     // Debug logging for HMAC comparison
-    printf("[DEBUG] 🔍 HMAC verification details:\n");
-    printf("[DEBUG] Message length: %d bytes\n", msgLen);
-    printf("[DEBUG] Key: '%s'\n", key);
-    printf("[DEBUG] Calculated HMAC: ");
-    for (int i = 0; i < DTNEX_HMAC_SIZE; i++) {
-        printf("%02x", calculatedHmac[i]);
+    debug_log(config, "🔍 HMAC verification details:");
+    debug_log(config, "Message length: %d bytes", msgLen);
+    debug_log(config, "Key: '%s'", key);
+    
+    if (config->debugMode) {
+        printf("\033[90m[DEBUG] Calculated HMAC: ");
+        for (int i = 0; i < DTNEX_HMAC_SIZE; i++) {
+            printf("%02x", calculatedHmac[i]);
+        }
+        printf("\n[DEBUG] Received HMAC:   ");
+        for (int i = 0; i < DTNEX_HMAC_SIZE; i++) {
+            printf("%02x", receivedHmac[i]);
+        }
+        printf("\033[0m\n");
     }
-    printf("\n[DEBUG] Received HMAC:   ");
-    for (int i = 0; i < DTNEX_HMAC_SIZE; i++) {
-        printf("%02x", receivedHmac[i]);
-    }
-    printf("\n");
     
     int result = memcmp(calculatedHmac, receivedHmac, DTNEX_HMAC_SIZE) == 0;
-    printf("[DEBUG] HMAC match: %s\n", result ? "YES" : "NO");
+    debug_log(config, "HMAC match: %s", result ? "YES" : "NO");
     return result;
 }
 
@@ -2039,11 +2035,49 @@ void eventDrivenLoop(DtnexConfig *config) {
             if (tryConnectToIon(config) == 0) {
                 ionConnected = 1;
                 dtnex_log("✅ Successfully connected to ION");
+                
+                // Initialize services that were skipped during startup
+                if (!bpechoState.running) {
+                    dtnex_log("🚀 Initializing bpecho service after ION reconnection...");
+                    if (initBpechoService(config, &bpechoState) == 0) {
+                        if (pthread_create(&bpechoThread, NULL, runBpechoService, (void *)config) == 0) {
+                            dtnex_log("✅ Bpecho service thread started");
+                        } else {
+                            dtnex_log("❌ Failed to create bpecho service thread");
+                            bpechoState.running = 0;
+                        }
+                    } else {
+                        dtnex_log("❌ Failed to initialize bpecho service");
+                    }
+                }
+                
+                if (!bundleReceptionState.running) {
+                    dtnex_log("🚀 Initializing bundle reception service after ION reconnection...");
+                    if (initBundleReception(config, &bundleReceptionState) == 0) {
+                        if (pthread_create(&bundleReceptionState.thread, NULL, runBundleReception, (void *)&bundleReceptionState) == 0) {
+                            dtnex_log("✅ Bundle reception thread started");
+                        } else {
+                            dtnex_log("❌ Failed to create bundle reception thread");
+                        }
+                    } else {
+                        dtnex_log("❌ Failed to initialize bundle reception service");
+                    }
+                }
+                
                 // Schedule first update immediately after connection
                 scheduleNextUpdate(config, &nextUpdateTime);
             } else {
-                dtnex_log("🚨 Failed to connect to ION");
-                nextIonRetry = currentTime + 60; // Retry in 1 minute
+                // Check if ION is completely stopped
+                int ionProcessCount = system("pgrep -c '^(ion|bp)' >/dev/null 2>&1");
+                if (ionProcessCount != 0) {
+                    // ION processes are running, quick retry
+                    dtnex_log("🚨 Failed to connect to ION (processes running - may still be starting)");
+                    nextIonRetry = currentTime + 10; // Retry in 10 seconds
+                } else {
+                    // No ION processes found, longer wait
+                    dtnex_log("🚨 Failed to connect to ION (no ION processes detected)");
+                    nextIonRetry = currentTime + 300; // Retry in 5 minutes
+                }
             }
         }
         
@@ -2076,12 +2110,20 @@ void eventDrivenLoop(DtnexConfig *config) {
                 }
             }
             
-            // Generate graph if enabled
+            // Generate graph if enabled (independent of ION status)
             if (config->createGraph) {
                 createGraph(config);
             }
             
             // Schedule next update
+            scheduleNextUpdate(config, &nextUpdateTime);
+        }
+        
+        // Generate graph even if ION is not connected, on first run or when the schedule would trigger
+        // This ensures graph generation works even when ION is down
+        if (config->createGraph && !ionConnected && currentTime >= nextUpdateTime) {
+            createGraph(config);
+            // Schedule next update even when ION is down
             scheduleNextUpdate(config, &nextUpdateTime);
         }
         
@@ -2149,22 +2191,41 @@ void scheduleNextUpdate(DtnexConfig *config, time_t *nextUpdateTime) {
 }
 
 /**
- * Reconnect to ION after restart or failure
+ * Completely restart DTNEX when ION restart is detected
+ * This is safer than trying to reinitialize ION connections
  */
-int reconnectToIon(DtnexConfig *config) {
-    // Clean up existing connection
-    if (sap) {
-        bp_close(sap);
-        bp_detach();
-        sap = 0;
-    }
+void restartDtnex(DtnexConfig *config) {
+    dtnex_log("🔄 ION restart detected - completely restarting DTNEX...");
     
-    // Wait a moment for ION to stabilize
+    // Give ION time to fully restart
     sleep(2);
     
-    // Attempt to reinitialize
-    return init(config);
+    // Clean shutdown first
+    running = 0;
+    ionConnected = 0;
+    
+    // Close file descriptors cleanly if possible
+    if (sap != NULL) {
+        bp_close(sap);
+        sap = NULL;
+    }
+    
+    // Log the restart
+    dtnex_log("🔄 Executing DTNEX restart...");
+    
+    // Execute restart using execv
+    if (original_argv != NULL && original_argc > 0) {
+        execv(original_argv[0], original_argv);
+        
+        // If execv fails, log error and exit
+        dtnex_log("❌ Failed to restart DTNEX: %s", strerror(errno));
+        exit(1);
+    } else {
+        dtnex_log("❌ Cannot restart - original arguments not stored");
+        exit(1);
+    }
 }
+
 
 /**
  * Check if ION is running and accessible
@@ -2642,8 +2703,41 @@ int decodeCborMessage(DtnexConfig *config, unsigned char *buffer, int bufferSize
             } else {
                 debug_log(config, "❌ Failed to decode nodeId integer in GPS metadata");
             }
+        } else if (dataArraySize == 2) {
+            // Legacy metadata without nodeId: [name, contact]
+            debug_log(config, "🔍 Attempting to decode legacy metadata (2 elements)");
+            if (manualDecodeCborString(extractedMetadata.name, MAX_NODE_NAME_LENGTH - 1, &extractCursor, &extractBytesBuffered) &&
+                manualDecodeCborString(extractedMetadata.contact, MAX_CONTACT_INFO_LENGTH - 1, &extractCursor, &extractBytesBuffered)) {
+                
+                extractedMetadata.nodeId = origin;  // Use origin as nodeId for legacy format
+                extractedMetadata.latitude = 0;  // No GPS data
+                extractedMetadata.longitude = 0;
+                hasExtractedData = 1;
+                debug_log(config, "✅ Extracted legacy metadata: node=%lu, name=%s, contact=%s", 
+                          extractedMetadata.nodeId, extractedMetadata.name, extractedMetadata.contact);
+            } else {
+                debug_log(config, "❌ Failed to decode legacy name/contact");
+            }
+        } else if (dataArraySize == 4) {
+            // Legacy GPS metadata without nodeId: [name, contact, latitude, longitude]
+            debug_log(config, "🔍 Attempting to decode legacy GPS metadata (4 elements)");
+            if (manualDecodeCborString(extractedMetadata.name, MAX_NODE_NAME_LENGTH - 1, &extractCursor, &extractBytesBuffered) &&
+                manualDecodeCborString(extractedMetadata.contact, MAX_CONTACT_INFO_LENGTH - 1, &extractCursor, &extractBytesBuffered) &&
+                manualDecodeCborInteger(&tempLat, &extractCursor, &extractBytesBuffered) &&
+                manualDecodeCborInteger(&tempLon, &extractCursor, &extractBytesBuffered)) {
+                
+                extractedMetadata.nodeId = origin;  // Use origin as nodeId for legacy format
+                extractedMetadata.latitude = (int)tempLat;
+                extractedMetadata.longitude = (int)tempLon;
+                hasExtractedData = 1;
+                debug_log(config, "✅ Extracted legacy GPS metadata: node=%lu, name=%s, contact=%s, lat=%d, lon=%d", 
+                          extractedMetadata.nodeId, extractedMetadata.name, extractedMetadata.contact,
+                          extractedMetadata.latitude, extractedMetadata.longitude);
+            } else {
+                debug_log(config, "❌ Failed to decode legacy name/contact/GPS data");
+            }
         } else {
-            debug_log(config, "❌ Unsupported metadata array size: %lu (expected 3 or 5)", dataArraySize);
+            debug_log(config, "❌ Unsupported metadata array size: %lu (expected 2, 3, 4, or 5)", dataArraySize);
         }
         
         if (!hasExtractedData) {
@@ -2708,7 +2802,7 @@ int decodeCborMessage(DtnexConfig *config, unsigned char *buffer, int bufferSize
     // Verify HMAC (calculate HMAC over message without the HMAC field)
     int messageWithoutHmacSize = hmacPosition - buffer;
     debug_log(config, "🔍 HMAC calculation: message size without HMAC = %d bytes", messageWithoutHmacSize);
-    if (!verifyHmac(buffer, messageWithoutHmacSize, receivedHmac, config->presSharedNetworkKey)) {
+    if (!verifyHmac(config, buffer, messageWithoutHmacSize, receivedHmac, config->presSharedNetworkKey)) {
         debug_log(config, "❌ HMAC verification failed - wrong hash or corrupted message");
         return -1;
     }
@@ -2786,18 +2880,57 @@ int processCborContactMessage(DtnexConfig *config, unsigned char *nonce, time_t 
     float confidence = 1.0;   // Default confidence
     int announce = 0;         // Don't announce to region
     
-    int result = rfx_insert_contact(regionNbr, startTime, endTime, 
-                                    (uvast)contact->nodeA, (uvast)contact->nodeB, 
-                                    xmitRate, confidence, &cxaddr, announce);
+    // Add bidirectional contacts as per user requirement (A->B and B->A)
+    PsmAddress cxaddr2 = 0;
+    int result1 = rfx_insert_contact(regionNbr, startTime, endTime, 
+                                     (uvast)contact->nodeA, (uvast)contact->nodeB, 
+                                     xmitRate, confidence, &cxaddr, announce);
     
-    if (result == 0) {
-        dtnex_log("✅ Contact %lu↔%lu added successfully", contact->nodeA, contact->nodeB);
-    } else if (result == 9) {
-        debug_log(config, "ℹ️ Contact %lu↔%lu already exists (overlapping contact ignored)", contact->nodeA, contact->nodeB);
-    } else if (result == 11) {
-        debug_log(config, "ℹ️ Contact %lu↔%lu is duplicate (already in region)", contact->nodeA, contact->nodeB);
+    int result2 = rfx_insert_contact(regionNbr, startTime, endTime, 
+                                     (uvast)contact->nodeB, (uvast)contact->nodeA, 
+                                     xmitRate, confidence, &cxaddr2, announce);
+    
+    if (result1 == 0 && result2 == 0) {
+        dtnex_log("✅ Bidirectional contacts %lu↔%lu added successfully", contact->nodeA, contact->nodeB);
+        
+        // Add bidirectional ranges for the contact (as per original bash implementation)
+        // Range distance of 1 second OWLT (One-Way Light Time)
+        PsmAddress rxaddr1 = 0, rxaddr2 = 0;
+        unsigned int owlt = 1;  // 1 second range distance
+        int announceRange = 0;  // Don't announce to region
+        
+        // Add range A->B
+        int rangeResult1 = rfx_insert_range(startTime, endTime, 
+                                            (uvast)contact->nodeA, (uvast)contact->nodeB, 
+                                            owlt, &rxaddr1, announceRange);
+        
+        // Add range B->A  
+        int rangeResult2 = rfx_insert_range(startTime, endTime, 
+                                            (uvast)contact->nodeB, (uvast)contact->nodeA, 
+                                            owlt, &rxaddr2, announceRange);
+        
+        if (rangeResult1 == 0 && rangeResult2 == 0) {
+            debug_log(config, "✅ Bidirectional ranges %lu↔%lu added successfully", contact->nodeA, contact->nodeB);
+        } else {
+            debug_log(config, "⚠️ Range addition results: %lu->%lu: %d, %lu->%lu: %d", 
+                     contact->nodeA, contact->nodeB, rangeResult1,
+                     contact->nodeB, contact->nodeA, rangeResult2);
+        }
     } else {
-        dtnex_log("❌ Failed to add contact %lu↔%lu (error: %d)", contact->nodeA, contact->nodeB, result);
+        // Handle partial success or errors
+        if (result1 == 0 || result2 == 0) {
+            debug_log(config, "⚠️ Partial contact success: %lu->%lu: %d, %lu->%lu: %d", 
+                     contact->nodeA, contact->nodeB, result1,
+                     contact->nodeB, contact->nodeA, result2);
+        }
+        
+        if (result1 == 9 || result2 == 9) {
+            debug_log(config, "ℹ️ Contact %lu↔%lu already exists (overlapping contact ignored)", contact->nodeA, contact->nodeB);
+        } else if (result1 == 11 || result2 == 11) {
+            debug_log(config, "ℹ️ Contact %lu↔%lu is duplicate (already in region)", contact->nodeA, contact->nodeB);
+        } else if (result1 != 0 && result2 != 0) {
+            dtnex_log("❌ Failed to add bidirectional contacts %lu↔%lu (errors: %d, %d)", contact->nodeA, contact->nodeB, result1, result2);
+        }
     }
     
     // Forward CBOR contact message to all neighbors (except origin and sender)
@@ -2968,9 +3101,9 @@ void forwardCborMetadataMessage(DtnexConfig *config, unsigned char *originalNonc
         bytesWritten += cbor_encode_byte_string(newNonce, DTNEX_NONCE_SIZE, &cursor);
         
         // Metadata data
-        int metadataElements = 2; // name and contact always present
+        int metadataElements = 3; // nodeId, name, contact always present
         if (metadata->latitude != 0 || metadata->longitude != 0) {
-            metadataElements = 4; // name, contact, lat, lon
+            metadataElements = 5; // nodeId, name, contact, lat, lon
         }
         
         bytesWritten += cbor_encode_array_open(metadataElements, &cursor);
@@ -2978,7 +3111,7 @@ void forwardCborMetadataMessage(DtnexConfig *config, unsigned char *originalNonc
         bytesWritten += cbor_encode_text_string(metadata->name, strlen(metadata->name), &cursor);
         bytesWritten += cbor_encode_text_string(metadata->contact, strlen(metadata->contact), &cursor);
         
-        if (metadataElements == 4) {
+        if (metadataElements == 5) {
             bytesWritten += cbor_encode_integer(metadata->latitude, &cursor);
             bytesWritten += cbor_encode_integer(metadata->longitude, &cursor);
         }

@@ -47,7 +47,7 @@ extern int removeEndpoint(char *endpointName);
 char *strptime(const char *s, const char *format, struct tm *tm);
 
 // Version information
-#define DTNEXC_VERSION "2.28"
+#define DTNEXC_VERSION "2.41"
 #define DTNEXC_BUILD_DATE __DATE__
 #define DTNEXC_BUILD_TIME __TIME__
 
@@ -199,7 +199,7 @@ void parseNodeMetadata(const char *rawMetadata, StructuredMetadata *metadata);
 int sendCborBundle(const char *destEid, unsigned char *cborData, int dataSize, int ttl);
 void generateNonce(unsigned char *nonce);
 int calculateHmac(const unsigned char *message, int msgLen, const char *key, unsigned char *hmac);
-int verifyHmac(const unsigned char *message, int msgLen, const unsigned char *receivedHmac, const char *key);
+int verifyHmac(DtnexConfig *config, const unsigned char *message, int msgLen, const unsigned char *receivedHmac, const char *key);
 int isNonceDuplicate(unsigned char *nonce, unsigned long origin);
 void addNonceToCache(unsigned char *nonce, unsigned long origin);
 int manualDecodeCborInteger(unsigned long *value, unsigned char **cursor, unsigned int *bytesBuffered);
@@ -216,7 +216,7 @@ IonStatus checkIonStatus(DtnexConfig *config);
 void serviceLoop(DtnexConfig *config);
 void parseArguments(int argc, char **argv, DtnexConfig *config);
 void eventDrivenLoop(DtnexConfig *config);
-int reconnectToIon(DtnexConfig *config);
+void restartDtnex(DtnexConfig *config);
 void scheduleNextUpdate(DtnexConfig *config, time_t *nextUpdateTime);
 
 // Logging with debug mode support

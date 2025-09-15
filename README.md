@@ -1,58 +1,211 @@
-# ion-dtn-dtnex
-ION-DTN Network Information Exchange Mechanism
+# DTNEX - DTN Network Information Exchange
 
-## What it does
-DTNEX helps to distribute information about individual ION-DTN nodes connections with other nodes in the Delay Tolerant Network. The system builds up a local Contact Graph in ION of all the other nodes on DTN network that run this software.
+DTNEX is a high-performance system for distributing network topology information across Delay Tolerant Networks (DTN). It enables DTN nodes to build and maintain local contact graphs by exchanging information about network connectivity and node metadata.
 
-## Implementations
-DTNEx is available in two implementations:
+## Overview
 
-1. **Bash Script (dtnex.sh)** - The original implementation
-2. **C Implementation (dtnexc)** - A higher-performance native implementation with direct ION API integration
-
-## Requirements:
-* ION-DTN (4.1.0 or higher) with original bpsource and bpsink applications
-* ION Configuration of neighbor nodes (plans and convergence layers)
-* Registered at least one ipn endpoint (used to retrieve node ID)
-* Optional: Graphviz graph visualization software (https://graphviz.org/)
-
-## How it works:
-DTNEx registers additional ipn endpoint on service number 12160. This service is used to receive network information messages from other nodes using the bpsink (bash) or direct BP API (C). The system periodically sends information about configured ION plans (directly connected DTN nodes – neighbor nodes) to all nodes in the plan. It then parses received network information messages from other nodes and updates the local ION Contact Graph accordingly. At the same time, received network messages are forwarded to other nodes.
-
-## How to use it
-
-### Bash Implementation
-The bash script does not require any configuration. It can be simply started by running `./dtnex.sh` command.
-
-### C Implementation
-The C implementation offers better performance and direct ION API integration. To use it:
-
-1. Navigate to the dtnexc directory
-2. Build the application: `./build.sh`
-3. Run the application: `./dtnexc`
-
-Configuration options can be set in `dtnex.conf` file.
-
-**Note:** In order to keep the information about the DTN network topology updated, one of these implementations needs to be running.
+DTNEX operates by having DTN nodes periodically exchange information about their configured contacts (communication opportunities) with other nodes in the network. This allows all nodes to build a comprehensive view of the network topology, which is essential for effective DTN routing.
 
 ## Key Features
 
-### Common Features
-- Dynamic contact graph updates
-- Loop-prevention mechanisms
-- Automatic discovery of network topology
-- Contact graph visualization
-- Node metadata exchange
+- **Automated Contact Distribution**: Shares ION-DTN contact information across the network
+- **Node Metadata Exchange**: Distributes node descriptions, GPS coordinates, and contact information
+- **CBOR Message Protocol**: Efficient binary message format with HMAC authentication
+- **Network Topology Visualization**: Optional GraphViz integration for network diagrams
+- **Multi-threaded Operation**: Event-driven architecture with background services
+- **Security**: HMAC-based message authentication and replay protection
+- **High Performance**: Direct ION API integration, no shell command dependencies
 
-### C Implementation Additional Features
-- Direct ION API integration (no shell commands)
-- Multi-threaded operation with bpecho service
-- More efficient memory management
-- Improved message verification with configurable pre-shared key
+## Architecture
 
-## Contact Graph Visualization
-Both implementations can visualize ION's contact graph. Install the Graphviz software package and set the "createGraph" option to true.
-![GraphViz](https://raw.githubusercontent.com/samograsic/ion-dtn-dtnex/main/dtnGraphExample.png)
+### Core Components
 
-## Message Format
-See [DTNEX_MESSAGE_FORMAT.md](DTNEX_MESSAGE_FORMAT.md) for detailed documentation on the message format and protocol specifications.
+1. **Contact Exchange Engine**: Distributes ION contact plan information to neighbor nodes
+2. **Metadata Management**: Shares node descriptions, locations, and contact details
+3. **Message Authentication**: HMAC-SHA256 with configurable pre-shared keys
+4. **Network Visualization**: GraphViz integration for topology diagrams
+5. **Bundle Protocol Integration**: Native ION-DTN Bundle Protocol v7 support
+
+### Network Topology Discovery
+
+DTNEX builds network topology through a distributed information exchange process:
+
+1. **Contact Discovery**: Each node periodically broadcasts its configured ION contacts
+2. **Information Propagation**: Nodes forward received contact information to their neighbors  
+3. **Local Graph Building**: Each node builds a complete network topology view
+4. **Routing Integration**: ION uses the distributed contact graph for routing decisions
+
+### Message Protocol
+
+DTNEX uses CBOR (Compact Binary Object Representation) for efficient message encoding:
+
+- **Contact Messages**: Inform nodes about connectivity between node pairs
+- **Metadata Messages**: Share node descriptions, GPS coordinates, and operator information
+- **Authentication**: HMAC-SHA256 with configurable pre-shared network keys
+- **Replay Protection**: Nonce-based duplicate detection and caching
+
+## Installation
+
+### Prerequisites
+
+- **ION-DTN 4.1.0+**: Must be installed and configured
+- **OpenSSL Development Libraries**: For HMAC authentication
+- **Build Tools**: GCC compiler and development headers
+- **Optional**: GraphViz for network visualization
+
+### System Requirements
+
+#### Linux/Ubuntu/Debian
+\`\`\`bash
+sudo apt update
+sudo apt install build-essential libssl-dev
+# Optional: For network visualization
+sudo apt install graphviz
+\`\`\`
+
+#### Raspberry Pi (Raspbian/Debian)
+\`\`\`bash
+sudo apt update  
+sudo apt install build-essential libssl-dev
+# Optional: For network visualization
+sudo apt install graphviz
+\`\`\`
+
+### ION-DTN Setup
+
+DTNEX requires ION-DTN source code headers for compilation. Two options:
+
+#### Option 1: Full ION Source (Recommended)
+\`\`\`bash
+# Clone ION source adjacent to DTNEX
+cd /path/to/projects/
+git clone https://github.com/nasa-jpl/ION ion-dtn
+git clone https://github.com/samograsic/ion-dtn-dtnex dtnex
+cd dtnex
+\`\`\`
+
+#### Option 2: Minimal Headers Only
+\`\`\`bash
+# Create header directories
+mkdir -p ../ione-code/bpv7/include
+mkdir -p ../ione-code/ici/include  
+mkdir -p ../ione-code/bpv7/library
+
+# Copy required headers from ION installation
+cp -r /usr/local/include/bp.h ../ione-code/bpv7/include/
+# ... (additional headers as needed)
+\`\`\`
+
+### Building DTNEX
+
+\`\`\`bash
+# Clone the repository
+git clone https://github.com/samograsic/ion-dtn-dtnex
+cd ion-dtn-dtnex
+
+# Build the application
+./build.sh
+
+# Optional: Install system-wide
+sudo make install
+\`\`\`
+
+## Configuration
+
+### Basic Configuration File (dtnex.conf)
+
+\`\`\`bash
+# DTNEX Configuration File
+# DTN Network Information Exchange
+
+# Message exchange interval (seconds) - how often to send contact/metadata updates
+updateInterval=30
+
+# Bundle time-to-live should be longer than update interval for reliability  
+bundleTTL=1800      # 30 minutes
+
+# Contact lifetime - how long contact information remains valid
+contactLifetime=3600  # 1 hour
+
+# Contact time tolerance for clock synchronization issues
+contactTimeTolerance=1800  # 30 minutes
+
+# Pre-shared network key for message authentication
+presSharedNetworkKey=open
+
+# Node metadata shared with other nodes (max 128 characters)
+# Format: "NodeName,ContactInfo,LocationDescription"
+# CBOR will create: [nodeId, name, contact] or [nodeId, name, contact, lat, lon] with GPS
+nodemetadata="DTNEX-Node,admin@example.com,Test-Location"
+
+# GPS coordinates for enhanced metadata (optional)
+# When enabled, CBOR metadata will include GPS coordinates as integers (multiplied by 1000000)
+gpsLatitude=59.334591
+gpsLongitude=18.063240
+
+# Graph visualization settings
+createGraph=true
+graphFile=contactGraph.png
+
+# Service mode operation
+serviceMode=false    # Set to true for background daemon mode
+debugMode=false      # Enable verbose debug output
+
+# Disable metadata exchange if needed
+noMetadataExchange=false
+\`\`\`
+
+### Configuration Parameters
+
+| Parameter | Description | Default | Example |
+|-----------|-------------|---------|---------|
+| \`updateInterval\` | Message exchange frequency (seconds) | 30 | 60 |
+| \`bundleTTL\` | Bundle time-to-live (seconds) | 1800 | 3600 |
+| \`contactLifetime\` | Contact validity duration (seconds) | 3600 | 7200 |
+| \`contactTimeTolerance\` | Clock sync tolerance (seconds) | 1800 | 1800 |
+| \`presSharedNetworkKey\` | HMAC authentication key | "open" | "mynetwork123" |
+| \`nodemetadata\` | Node description string | "" | "Node1,admin@site.com,Location" |
+| \`gpsLatitude\` | GPS latitude (decimal degrees) | - | 59.334591 |
+| \`gpsLongitude\` | GPS longitude (decimal degrees) | - | 18.063240 |
+| \`createGraph\` | Enable GraphViz visualization | false | true |
+| \`graphFile\` | Output graph filename | contactGraph.png | /var/www/graph.png |
+| \`serviceMode\` | Background daemon mode | false | true |
+| \`debugMode\` | Verbose debug output | false | true |
+| \`noMetadataExchange\` | Disable metadata sharing | false | true |
+
+## Usage
+
+### Basic Operation
+
+\`\`\`bash
+# Start DTNEX (ensure ION is running first)
+./dtnex
+
+# Start with debug output
+./dtnex --debug
+
+# Background service mode
+./dtnex --service
+\`\`\`
+
+### Service Integration
+
+#### Systemd Service (Linux)
+\`\`\`bash
+# Create service file
+sudo tee /etc/systemd/system/dtnex.service << EOF
+[Unit]
+Description=DTNEX - DTN Network Information Exchange
+After=ion.service
+Requires=ion.service
+
+[Service]
+Type=simple
+User=dtn
+WorkingDirectory=/opt/dtnex
+ExecStart=/usr/local/bin/dtnex --service
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

@@ -47,7 +47,7 @@ extern int removeEndpoint(char *endpointName);
 char *strptime(const char *s, const char *format, struct tm *tm);
 
 // Version information
-#define DTNEXC_VERSION "2.41"
+#define DTNEXC_VERSION "2.42"
 #define DTNEXC_BUILD_DATE __DATE__
 #define DTNEXC_BUILD_TIME __TIME__
 
@@ -60,7 +60,7 @@ char *strptime(const char *s, const char *format, struct tm *tm);
 #define DEFAULT_BPECHO_SERVICE_NR 12161
 #define DEFAULT_PRESHARED_KEY "open"
 #define MAX_HASH_CACHE 5000
-#define MAX_METADATA_LENGTH 128  // Increased from 32 to handle longer metadata strings
+#define MAX_METADATA_LENGTH 512  // Increased to handle longer metadata strings
 #define MAX_EID_LENGTH 64
 #define MAX_LINE_LENGTH 1024
 #define MAX_PLANS 100
@@ -75,8 +75,8 @@ char *strptime(const char *s, const char *format, struct tm *tm);
 #define DTNEX_HMAC_SIZE 8         // 64-bit HMAC for size optimization
 #define MAX_CBOR_BUFFER 128       // Maximum CBOR message size (increased for metadata)
 #define GPS_PRECISION_FACTOR 1000000  // GPS coordinate precision (6 decimal places)
-#define MAX_NODE_NAME_LENGTH 24   // Maximum node name length
-#define MAX_CONTACT_INFO_LENGTH 24  // Maximum contact info length
+#define MAX_NODE_NAME_LENGTH 64   // Maximum node name length
+#define MAX_CONTACT_INFO_LENGTH 128  // Maximum contact info length
 
 // Structure definitions
 typedef struct {

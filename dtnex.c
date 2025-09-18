@@ -2394,9 +2394,13 @@ int manualDecodeCborInteger(unsigned long *value, unsigned char **cursor, unsign
         (*bytesBuffered) -= 4;
         return 1;
     } else if (additionalInfo == 27) {
-        // 8-bytes follow (big-endian) - only use lower 32 bits
+        // 8-bytes follow (big-endian) - use full 64-bit value
         if (*bytesBuffered < 8) return 0;
-        *value = (((unsigned long)(*cursor)[4]) << 24) | 
+        *value = (((unsigned long)(*cursor)[0]) << 56) | 
+                 (((unsigned long)(*cursor)[1]) << 48) |
+                 (((unsigned long)(*cursor)[2]) << 40) | 
+                 (((unsigned long)(*cursor)[3]) << 32) |
+                 (((unsigned long)(*cursor)[4]) << 24) | 
                  (((unsigned long)(*cursor)[5]) << 16) |
                  (((unsigned long)(*cursor)[6]) << 8) | 
                  (*cursor)[7];

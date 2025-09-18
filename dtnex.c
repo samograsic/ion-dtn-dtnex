@@ -3015,16 +3015,12 @@ void forwardCborContactMessage(DtnexConfig *config, unsigned char *originalNonce
             continue;
         }
         
-        // Create CBOR forwarded message with new nonce but preserve original timestamp/expireTime
+        // Create CBOR forwarded message with preserved original nonce, timestamp and expireTime
         ContactInfo forwardContact = *contact; // Copy contact info
         
         // Create modified contact message for forwarding (from=our nodeId)
         unsigned char *cursor = cborBuffer;
-        unsigned char newNonce[DTNEX_NONCE_SIZE];
         int bytesWritten = 0;
-        
-        // Generate new nonce for forwarded message
-        generateNonce(newNonce);
         
         // Encode forwarded CBOR message
         bytesWritten += cbor_encode_array_open(9, &cursor);
@@ -3034,7 +3030,7 @@ void forwardCborContactMessage(DtnexConfig *config, unsigned char *originalNonce
         bytesWritten += cbor_encode_integer(expireTime, &cursor);
         bytesWritten += cbor_encode_integer(origin, &cursor);  // Keep original origin
         bytesWritten += cbor_encode_integer(config->nodeId, &cursor);  // Update "from" to our node
-        bytesWritten += cbor_encode_byte_string(newNonce, DTNEX_NONCE_SIZE, &cursor);
+        bytesWritten += cbor_encode_byte_string(originalNonce, DTNEX_NONCE_SIZE, &cursor);
         
         // Contact data
         bytesWritten += cbor_encode_array_open(3, &cursor);
@@ -3086,13 +3082,9 @@ void forwardCborMetadataMessage(DtnexConfig *config, unsigned char *originalNonc
             continue;
         }
         
-        // Create CBOR forwarded message with new nonce but preserve original timestamp/expireTime
+        // Create CBOR forwarded message with preserved original nonce, timestamp and expireTime
         unsigned char *cursor = cborBuffer;
-        unsigned char newNonce[DTNEX_NONCE_SIZE];
         int bytesWritten = 0;
-        
-        // Generate new nonce for forwarded message
-        generateNonce(newNonce);
         
         // Encode forwarded CBOR message
         bytesWritten += cbor_encode_array_open(9, &cursor);
@@ -3102,7 +3094,7 @@ void forwardCborMetadataMessage(DtnexConfig *config, unsigned char *originalNonc
         bytesWritten += cbor_encode_integer(expireTime, &cursor);
         bytesWritten += cbor_encode_integer(origin, &cursor);  // Keep original origin
         bytesWritten += cbor_encode_integer(config->nodeId, &cursor);  // Update "from" to our node
-        bytesWritten += cbor_encode_byte_string(newNonce, DTNEX_NONCE_SIZE, &cursor);
+        bytesWritten += cbor_encode_byte_string(originalNonce, DTNEX_NONCE_SIZE, &cursor);
         
         // Metadata data
         int metadataElements = 3; // nodeId, name, contact always present

@@ -332,11 +332,14 @@ int tryConnectToIon(DtnexConfig *config) {
         // Parse our own metadata
         parseNodeMetadata(config->nodemetadata, &metadata);
         
-        // Create metadata string with GPS if available
+        // Create metadata string with GPS if available, otherwise use location field
         if (config->hasGpsCoordinates) {
             snprintf(ownMetadata, sizeof(ownMetadata), "%s,%s,%.6f,%.6f", 
                     metadata.name, metadata.contact, 
                     config->gpsLatitude, config->gpsLongitude);
+        } else if (strlen(metadata.location) > 0) {
+            snprintf(ownMetadata, sizeof(ownMetadata), "%s,%s,%s", 
+                    metadata.name, metadata.contact, metadata.location);
         } else {
             snprintf(ownMetadata, sizeof(ownMetadata), "%s,%s", 
                     metadata.name, metadata.contact);
@@ -1852,10 +1855,17 @@ int encodeCborMetadataMessage(DtnexConfig *config, StructuredMetadata *metadata,
     // 7. Nonce
     bytesWritten += cbor_encode_byte_string(nonce, DTNEX_NONCE_SIZE, &cursor);
     
-    // 8. Metadata array - format: [nodeId, name, contact, lat?, lon?]
-    int metadataElements = 3; // nodeId, name, contact (GPS optional)
-    if (metadata->latitude != 0 && metadata->longitude != 0) {
-        metadataElements += 2; // Add latitude and longitude if both are set
+    // 8. Metadata array - format: [nodeId, name, contact, location?, lat?, lon?]
+    int metadataElements = 3; // nodeId, name, contact (base)
+    int hasLocation = strlen(metadata->location) > 0;
+    int hasGPS = (metadata->latitude != 0 && metadata->longitude != 0);
+    
+    if (hasLocation && hasGPS) {
+        metadataElements += 3; // Add location, latitude, and longitude
+    } else if (hasGPS) {
+        metadataElements += 2; // Add latitude and longitude only
+    } else if (hasLocation) {
+        metadataElements += 1; // Add location only
     }
     
     bytesWritten += cbor_encode_array_open(metadataElements, &cursor);
@@ -1863,10 +1873,19 @@ int encodeCborMetadataMessage(DtnexConfig *config, StructuredMetadata *metadata,
     bytesWritten += cbor_encode_text_string(metadata->name, strlen(metadata->name), &cursor);
     bytesWritten += cbor_encode_text_string(metadata->contact, strlen(metadata->contact), &cursor);
     
-    // Add GPS coordinates if both are available
-    if (metadata->latitude != 0 && metadata->longitude != 0) {
+    // Add fields in order: location (if available), then GPS (if available)
+    if (hasLocation && hasGPS) {
+        // Format: [nodeId, name, contact, location, lat, lon]
+        bytesWritten += cbor_encode_text_string(metadata->location, strlen(metadata->location), &cursor);
         bytesWritten += cbor_encode_integer(metadata->latitude, &cursor);
         bytesWritten += cbor_encode_integer(metadata->longitude, &cursor);
+    } else if (hasGPS) {
+        // Format: [nodeId, name, contact, lat, lon]
+        bytesWritten += cbor_encode_integer(metadata->latitude, &cursor);
+        bytesWritten += cbor_encode_integer(metadata->longitude, &cursor);
+    } else if (hasLocation) {
+        // Format: [nodeId, name, contact, location]
+        bytesWritten += cbor_encode_text_string(metadata->location, strlen(metadata->location), &cursor);
     }
     
     // 9. Calculate HMAC
@@ -1895,6 +1914,7 @@ void parseNodeMetadata(const char *rawMetadata, StructuredMetadata *metadata) {
     // Initialize only the string fields, preserve nodeId and GPS
     memset(metadata->name, 0, MAX_NODE_NAME_LENGTH);
     memset(metadata->contact, 0, MAX_CONTACT_INFO_LENGTH);
+    memset(metadata->location, 0, MAX_LOCATION_LENGTH);
     
     // Restore preserved values
     metadata->nodeId = savedNodeId;
@@ -1918,7 +1938,8 @@ void parseNodeMetadata(const char *rawMetadata, StructuredMetadata *metadata) {
             case 1: // Contact info
                 strncpy(metadata->contact, token, MAX_CONTACT_INFO_LENGTH - 1);
                 break;
-            case 2: // Location (ignored in CBOR version - use GPS instead)
+            case 2: // Location field
+                strncpy(metadata->location, token, MAX_LOCATION_LENGTH - 1);
                 break;
         }
         
@@ -1929,6 +1950,7 @@ void parseNodeMetadata(const char *rawMetadata, StructuredMetadata *metadata) {
     // Ensure null termination
     metadata->name[MAX_NODE_NAME_LENGTH - 1] = '\0';
     metadata->contact[MAX_CONTACT_INFO_LENGTH - 1] = '\0';
+    metadata->location[MAX_LOCATION_LENGTH - 1] = '\0';
 }
 
 /**
@@ -2697,6 +2719,7 @@ int decodeCborMessage(DtnexConfig *config, unsigned char *buffer, int bufferSize
                     // Strings are already null-terminated by manualDecodeCborString
                     extractedMetadata.latitude = (int)tempLat;
                     extractedMetadata.longitude = (int)tempLon;
+                    memset(extractedMetadata.location, 0, MAX_LOCATION_LENGTH);  // No location in this format
                     hasExtractedData = 1;
                     debug_log(config, "✅ Extracted full metadata with GPS: node=%lu, name=%s, contact=%s, lat=%d, lon=%d", 
                               extractedMetadata.nodeId, extractedMetadata.name, extractedMetadata.contact,
@@ -2706,6 +2729,30 @@ int decodeCborMessage(DtnexConfig *config, unsigned char *buffer, int bufferSize
                 }
             } else {
                 debug_log(config, "❌ Failed to decode nodeId integer in GPS metadata");
+            }
+        } else if (dataArraySize == 6) {
+            // Full metadata with location and GPS: [nodeId, name, contact, location, lat, lon]
+            debug_log(config, "🔍 Attempting to decode full metadata with location and GPS (6 elements)");
+            if (manualDecodeCborInteger(&tempNodeId, &extractCursor, &extractBytesBuffered)) {
+                debug_log(config, "🔍 Decoded tempNodeId: %lu", tempNodeId);
+                if (manualDecodeCborString(extractedMetadata.name, MAX_NODE_NAME_LENGTH - 1, &extractCursor, &extractBytesBuffered) &&
+                    manualDecodeCborString(extractedMetadata.contact, MAX_CONTACT_INFO_LENGTH - 1, &extractCursor, &extractBytesBuffered) &&
+                    manualDecodeCborString(extractedMetadata.location, MAX_LOCATION_LENGTH - 1, &extractCursor, &extractBytesBuffered) &&
+                    manualDecodeCborInteger(&tempLat, &extractCursor, &extractBytesBuffered) &&
+                    manualDecodeCborInteger(&tempLon, &extractCursor, &extractBytesBuffered)) {
+                    
+                    extractedMetadata.nodeId = (unsigned long)tempNodeId;
+                    extractedMetadata.latitude = (int)tempLat;
+                    extractedMetadata.longitude = (int)tempLon;
+                    hasExtractedData = 1;
+                    debug_log(config, "✅ Extracted full metadata with location and GPS: node=%lu, name=%s, contact=%s, location=%s, lat=%d, lon=%d", 
+                              extractedMetadata.nodeId, extractedMetadata.name, extractedMetadata.contact, extractedMetadata.location,
+                              extractedMetadata.latitude, extractedMetadata.longitude);
+                } else {
+                    debug_log(config, "❌ Failed to decode name/contact/location/GPS data");
+                }
+            } else {
+                debug_log(config, "❌ Failed to decode nodeId integer in GPS+location metadata");
             }
         } else if (dataArraySize == 2) {
             // Legacy metadata without nodeId: [name, contact]
@@ -2723,25 +2770,50 @@ int decodeCborMessage(DtnexConfig *config, unsigned char *buffer, int bufferSize
                 debug_log(config, "❌ Failed to decode legacy name/contact");
             }
         } else if (dataArraySize == 4) {
-            // Legacy GPS metadata without nodeId: [name, contact, latitude, longitude]
-            debug_log(config, "🔍 Attempting to decode legacy GPS metadata (4 elements)");
-            if (manualDecodeCborString(extractedMetadata.name, MAX_NODE_NAME_LENGTH - 1, &extractCursor, &extractBytesBuffered) &&
-                manualDecodeCborString(extractedMetadata.contact, MAX_CONTACT_INFO_LENGTH - 1, &extractCursor, &extractBytesBuffered) &&
-                manualDecodeCborInteger(&tempLat, &extractCursor, &extractBytesBuffered) &&
-                manualDecodeCborInteger(&tempLon, &extractCursor, &extractBytesBuffered)) {
-                
-                extractedMetadata.nodeId = origin;  // Use origin as nodeId for legacy format
-                extractedMetadata.latitude = (int)tempLat;
-                extractedMetadata.longitude = (int)tempLon;
-                hasExtractedData = 1;
-                debug_log(config, "✅ Extracted legacy GPS metadata: node=%lu, name=%s, contact=%s, lat=%d, lon=%d", 
-                          extractedMetadata.nodeId, extractedMetadata.name, extractedMetadata.contact,
-                          extractedMetadata.latitude, extractedMetadata.longitude);
+            // Check if this is the new format [nodeId, name, contact, location] or legacy GPS [name, contact, lat, lon]
+            // We'll try the new format first by attempting to decode the first element as nodeId
+            unsigned char *testCursor = cursor;
+            unsigned int testBytesBuffered = bytesBuffered;
+            unsigned long testNodeId;
+            
+            if (manualDecodeCborInteger(&testNodeId, &testCursor, &testBytesBuffered)) {
+                // First element decoded as integer - this is likely the new format [nodeId, name, contact, location]
+                debug_log(config, "🔍 Attempting to decode new 4-element metadata format (nodeId, name, contact, location)");
+                if (manualDecodeCborString(extractedMetadata.name, MAX_NODE_NAME_LENGTH - 1, &extractCursor, &extractBytesBuffered) &&
+                    manualDecodeCborString(extractedMetadata.contact, MAX_CONTACT_INFO_LENGTH - 1, &extractCursor, &extractBytesBuffered) &&
+                    manualDecodeCborString(extractedMetadata.location, MAX_LOCATION_LENGTH - 1, &extractCursor, &extractBytesBuffered)) {
+                    
+                    extractedMetadata.nodeId = (unsigned long)testNodeId;
+                    extractedMetadata.latitude = 0;  // No GPS data in this format
+                    extractedMetadata.longitude = 0;
+                    hasExtractedData = 1;
+                    debug_log(config, "✅ Extracted new 4-element metadata: node=%lu, name=%s, contact=%s, location=%s", 
+                              extractedMetadata.nodeId, extractedMetadata.name, extractedMetadata.contact, extractedMetadata.location);
+                } else {
+                    debug_log(config, "❌ Failed to decode name/contact/location strings in new format");
+                }
             } else {
-                debug_log(config, "❌ Failed to decode legacy name/contact/GPS data");
+                // First element is not an integer - assume legacy GPS format [name, contact, latitude, longitude]
+                debug_log(config, "🔍 Attempting to decode legacy GPS metadata (4 elements)");
+                if (manualDecodeCborString(extractedMetadata.name, MAX_NODE_NAME_LENGTH - 1, &extractCursor, &extractBytesBuffered) &&
+                    manualDecodeCborString(extractedMetadata.contact, MAX_CONTACT_INFO_LENGTH - 1, &extractCursor, &extractBytesBuffered) &&
+                    manualDecodeCborInteger(&tempLat, &extractCursor, &extractBytesBuffered) &&
+                    manualDecodeCborInteger(&tempLon, &extractCursor, &extractBytesBuffered)) {
+                    
+                    extractedMetadata.nodeId = origin;  // Use origin as nodeId for legacy format
+                    extractedMetadata.latitude = (int)tempLat;
+                    extractedMetadata.longitude = (int)tempLon;
+                    memset(extractedMetadata.location, 0, MAX_LOCATION_LENGTH);  // No location data
+                    hasExtractedData = 1;
+                    debug_log(config, "✅ Extracted legacy GPS metadata: node=%lu, name=%s, contact=%s, lat=%d, lon=%d", 
+                              extractedMetadata.nodeId, extractedMetadata.name, extractedMetadata.contact,
+                              extractedMetadata.latitude, extractedMetadata.longitude);
+                } else {
+                    debug_log(config, "❌ Failed to decode legacy name/contact/GPS data");
+                }
             }
         } else {
-            debug_log(config, "❌ Unsupported metadata array size: %lu (expected 2, 3, 4, or 5)", dataArraySize);
+            debug_log(config, "❌ Unsupported metadata array size: %lu (expected 2, 3, 4, 5, or 6)", dataArraySize);
         }
         
         if (!hasExtractedData) {
@@ -2963,6 +3035,9 @@ int processCborMetadataMessage(DtnexConfig *config, unsigned char *nonce, time_t
         double lon = (double)metadata->longitude / GPS_PRECISION_FACTOR;
         snprintf(fullMetadata, sizeof(fullMetadata), "%s,%s,%.6f,%.6f", 
                 metadata->name, metadata->contact, lat, lon);
+    } else if (strlen(metadata->location) > 0) {
+        snprintf(fullMetadata, sizeof(fullMetadata), "%s,%s,%s", 
+                metadata->name, metadata->contact, metadata->location);
     } else {
         snprintf(fullMetadata, sizeof(fullMetadata), "%s,%s", 
                 metadata->name, metadata->contact);

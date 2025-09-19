@@ -19,7 +19,6 @@ receivedmsgpipe
 # Development and obsolete directories
 dev/
 obsolete/
-.claude/
 .vscode/
 
 # ION source code directory (should be external)

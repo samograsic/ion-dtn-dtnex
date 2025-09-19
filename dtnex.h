@@ -47,7 +47,7 @@ extern int removeEndpoint(char *endpointName);
 char *strptime(const char *s, const char *format, struct tm *tm);
 
 // Version information
-#define DTNEXC_VERSION "2.44"
+#define DTNEXC_VERSION "2.45"
 #define DTNEXC_BUILD_DATE __DATE__
 #define DTNEXC_BUILD_TIME __TIME__
 
@@ -77,6 +77,7 @@ char *strptime(const char *s, const char *format, struct tm *tm);
 #define GPS_PRECISION_FACTOR 1000000  // GPS coordinate precision (6 decimal places)
 #define MAX_NODE_NAME_LENGTH 64   // Maximum node name length
 #define MAX_CONTACT_INFO_LENGTH 128  // Maximum contact info length
+#define MAX_LOCATION_LENGTH 64    // Maximum location field length
 
 // Structure definitions
 typedef struct {
@@ -126,6 +127,7 @@ typedef struct {
     unsigned long nodeId;
     char name[MAX_NODE_NAME_LENGTH];
     char contact[MAX_CONTACT_INFO_LENGTH]; 
+    char location[MAX_LOCATION_LENGTH];    // Text-based location field
     int latitude;              // Latitude * GPS_PRECISION_FACTOR (0 = not set)
     int longitude;             // Longitude * GPS_PRECISION_FACTOR (0 = not set)
 } StructuredMetadata;

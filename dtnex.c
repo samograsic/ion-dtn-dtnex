@@ -2894,47 +2894,40 @@ int processCborContactMessage(DtnexConfig *config, unsigned char *nonce, time_t 
                                      (uvast)contact->nodeB, (uvast)contact->nodeA, 
                                      xmitRate, confidence, &cxaddr2, announce);
     
+    // Log contact results
     if (result1 == 0 && result2 == 0) {
         dtnex_log("✅ Bidirectional contacts %lu↔%lu added successfully", contact->nodeA, contact->nodeB);
-        
-        // Add bidirectional ranges for the contact (as per original bash implementation)
-        // Range distance of 1 second OWLT (One-Way Light Time)
-        PsmAddress rxaddr1 = 0, rxaddr2 = 0;
-        unsigned int owlt = 1;  // 1 second range distance
-        int announceRange = 0;  // Don't announce to region
-        
-        // Add range A->B
-        int rangeResult1 = rfx_insert_range(startTime, endTime, 
-                                            (uvast)contact->nodeA, (uvast)contact->nodeB, 
-                                            owlt, &rxaddr1, announceRange);
-        
-        // Add range B->A  
-        int rangeResult2 = rfx_insert_range(startTime, endTime, 
-                                            (uvast)contact->nodeB, (uvast)contact->nodeA, 
-                                            owlt, &rxaddr2, announceRange);
-        
-        if (rangeResult1 == 0 && rangeResult2 == 0) {
-            debug_log(config, "✅ Bidirectional ranges %lu↔%lu added successfully", contact->nodeA, contact->nodeB);
-        } else {
-            debug_log(config, "⚠️ Range addition results: %lu->%lu: %d, %lu->%lu: %d", 
-                     contact->nodeA, contact->nodeB, rangeResult1,
-                     contact->nodeB, contact->nodeA, rangeResult2);
-        }
     } else {
-        // Handle partial success or errors
-        if (result1 == 0 || result2 == 0) {
-            debug_log(config, "⚠️ Partial contact success: %lu->%lu: %d, %lu->%lu: %d", 
-                     contact->nodeA, contact->nodeB, result1,
-                     contact->nodeB, contact->nodeA, result2);
-        }
-        
-        if (result1 == 9 || result2 == 9) {
-            debug_log(config, "ℹ️ Contact %lu↔%lu already exists (overlapping contact ignored)", contact->nodeA, contact->nodeB);
-        } else if (result1 == 11 || result2 == 11) {
-            debug_log(config, "ℹ️ Contact %lu↔%lu is duplicate (already in region)", contact->nodeA, contact->nodeB);
-        } else if (result1 != 0 && result2 != 0) {
-            dtnex_log("❌ Failed to add bidirectional contacts %lu↔%lu (errors: %d, %d)", contact->nodeA, contact->nodeB, result1, result2);
-        }
+        debug_log(config, "ℹ️ Contact results %lu↔%lu: %lu→%lu=%d, %lu→%lu=%d", 
+                 contact->nodeA, contact->nodeB,
+                 contact->nodeA, contact->nodeB, result1,
+                 contact->nodeB, contact->nodeA, result2);
+    }
+    
+    // Always add bidirectional ranges regardless of contact results
+    // Range distance of 1 second OWLT (One-Way Light Time)
+    PsmAddress rxaddr1 = 0, rxaddr2 = 0;
+    unsigned int owlt = 1;  // 1 second range distance
+    int announceRange = 0;  // Don't announce to region
+    
+    // Add range A->B
+    int rangeResult1 = rfx_insert_range(startTime, endTime, 
+                                        (uvast)contact->nodeA, (uvast)contact->nodeB, 
+                                        owlt, &rxaddr1, announceRange);
+    
+    // Add range B->A  
+    int rangeResult2 = rfx_insert_range(startTime, endTime, 
+                                        (uvast)contact->nodeB, (uvast)contact->nodeA, 
+                                        owlt, &rxaddr2, announceRange);
+    
+    // Log range results
+    if (rangeResult1 == 0 && rangeResult2 == 0) {
+        debug_log(config, "✅ Bidirectional ranges %lu↔%lu added successfully", contact->nodeA, contact->nodeB);
+    } else {
+        debug_log(config, "ℹ️ Range results %lu↔%lu: %lu→%lu=%d, %lu→%lu=%d", 
+                 contact->nodeA, contact->nodeB,
+                 contact->nodeA, contact->nodeB, rangeResult1,
+                 contact->nodeB, contact->nodeA, rangeResult2);
     }
     
     // Forward CBOR contact message to all neighbors (except origin and sender)

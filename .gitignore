@@ -22,6 +22,9 @@ obsolete/
 .claude/
 .vscode/
 
+# Project documentation (local only)
+CLAUDE.md
+
 # ION source code directory (should be external)
 ione-code/
 

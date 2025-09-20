@@ -2779,6 +2779,9 @@ int decodeCborMessage(DtnexConfig *config, unsigned char *buffer, int bufferSize
             if (manualDecodeCborInteger(&testNodeId, &testCursor, &testBytesBuffered)) {
                 // First element decoded as integer - this is likely the new format [nodeId, name, contact, location]
                 debug_log(config, "🔍 Attempting to decode new 4-element metadata format (nodeId, name, contact, location)");
+                // Use the advanced cursor from the test since we already consumed the nodeId
+                extractCursor = testCursor;
+                extractBytesBuffered = testBytesBuffered;
                 if (manualDecodeCborString(extractedMetadata.name, MAX_NODE_NAME_LENGTH - 1, &extractCursor, &extractBytesBuffered) &&
                     manualDecodeCborString(extractedMetadata.contact, MAX_CONTACT_INFO_LENGTH - 1, &extractCursor, &extractBytesBuffered) &&
                     manualDecodeCborString(extractedMetadata.location, MAX_LOCATION_LENGTH - 1, &extractCursor, &extractBytesBuffered)) {

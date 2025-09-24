@@ -2353,7 +2353,7 @@ int manualDecodeCborString(char *buffer, int maxLen, unsigned char **cursor, uns
     }
     
     // Check if we have enough bytes and buffer space
-    if (*bytesBuffered < stringLen || stringLen >= maxLen) {
+    if (*bytesBuffered < stringLen || stringLen > maxLen - 1) {
         return 0;
     }
     
@@ -3168,9 +3168,16 @@ void forwardCborMetadataMessage(DtnexConfig *config, unsigned char *originalNonc
         bytesWritten += cbor_encode_byte_string(originalNonce, DTNEX_NONCE_SIZE, &cursor);
         
         // Metadata data
-        int metadataElements = 3; // nodeId, name, contact always present
-        if (metadata->latitude != 0 || metadata->longitude != 0) {
-            metadataElements = 5; // nodeId, name, contact, lat, lon
+        int metadataElements = 3; // nodeId, name, contact (base)
+        int hasLocation = strlen(metadata->location) > 0;
+        int hasGPS = (metadata->latitude != 0 && metadata->longitude != 0);
+        
+        if (hasLocation && hasGPS) {
+            metadataElements += 3; // Add location, latitude, and longitude
+        } else if (hasGPS) {
+            metadataElements += 2; // Add latitude and longitude only
+        } else if (hasLocation) {
+            metadataElements += 1; // Add location only
         }
         
         bytesWritten += cbor_encode_array_open(metadataElements, &cursor);
@@ -3178,9 +3185,19 @@ void forwardCborMetadataMessage(DtnexConfig *config, unsigned char *originalNonc
         bytesWritten += cbor_encode_text_string(metadata->name, strlen(metadata->name), &cursor);
         bytesWritten += cbor_encode_text_string(metadata->contact, strlen(metadata->contact), &cursor);
         
-        if (metadataElements == 5) {
+        // Add fields in order: location (if available), then GPS (if available)
+        if (hasLocation && hasGPS) {
+            // Format: [nodeId, name, contact, location, lat, lon]
+            bytesWritten += cbor_encode_text_string(metadata->location, strlen(metadata->location), &cursor);
             bytesWritten += cbor_encode_integer(metadata->latitude, &cursor);
             bytesWritten += cbor_encode_integer(metadata->longitude, &cursor);
+        } else if (hasGPS) {
+            // Format: [nodeId, name, contact, lat, lon]
+            bytesWritten += cbor_encode_integer(metadata->latitude, &cursor);
+            bytesWritten += cbor_encode_integer(metadata->longitude, &cursor);
+        } else if (hasLocation) {
+            // Format: [nodeId, name, contact, location]
+            bytesWritten += cbor_encode_text_string(metadata->location, strlen(metadata->location), &cursor);
         }
         
         // Calculate HMAC over everything except HMAC itself

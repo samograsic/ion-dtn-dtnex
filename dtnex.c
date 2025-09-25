@@ -1393,7 +1393,10 @@ void *runBpechoService(void *arg) {
     
     // Clean up
     dtnex_log("🧹 Shutting down bpecho service...");
-    bp_close(bpechoState.sap);
+    if (bpechoState.sap != NULL) {
+        bp_close(bpechoState.sap);
+        bpechoState.sap = NULL;
+    }
     ionStopAttendant(&bpechoState.attendant);
     
     dtnex_log("✅ Bpecho service terminated normally");

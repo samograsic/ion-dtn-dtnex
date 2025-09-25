@@ -785,6 +785,10 @@ void signalHandler(int sig) {
         if (bpechoState.sap != NULL) {
             bp_interrupt(bpechoState.sap);
             ionPauseAttendant(&bpechoState.attendant);
+            
+            // Wait for bpecho thread to terminate before closing its resources
+            dtnex_log("Waiting for bpecho service to terminate...");
+            pthread_join(bpechoThread, NULL);
         }
         
         // Force cleanup and exit for all signals since main loop might be blocked
@@ -795,7 +799,7 @@ void signalHandler(int sig) {
         bp_close(sap);
         sap = NULL;
         
-        // Close bpecho endpoint if it exists
+        // Close bpecho endpoint if it exists (should be closed by thread, but double-check)
         if (bpechoState.sap != NULL) {
             bp_close(bpechoState.sap);
             bpechoState.sap = NULL;

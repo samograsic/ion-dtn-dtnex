@@ -2981,6 +2981,29 @@ int processCborContactMessage(DtnexConfig *config, unsigned char *nonce, time_t 
     float confidence = 1.0;   // Default confidence
     int announce = 0;         // Don't announce to region
     
+    // Remove existing contacts first to avoid overlapping time issues
+    time_t removeTime1 = startTime;  // Use original start time for removal
+    time_t removeTime2 = startTime;
+    
+    int removeResult1 = rfx_remove_contact(regionNbr, &removeTime1, 
+                                          (uvast)contact->nodeA, (uvast)contact->nodeB, announce);
+    int removeResult2 = rfx_remove_contact(regionNbr, &removeTime2,
+                                          (uvast)contact->nodeB, (uvast)contact->nodeA, announce);
+    
+    debug_log(config, "🗑️ Contact removal results %lu↔%lu: %lu→%lu=%d, %lu→%lu=%d", 
+              contact->nodeA, contact->nodeB,
+              contact->nodeA, contact->nodeB, removeResult1,
+              contact->nodeB, contact->nodeA, removeResult2);
+    
+    // If contacts exist, update start time to now to avoid overlaps
+    time_t currentTime = time(NULL);
+    if (removeResult1 == 0 || removeResult2 == 0) {
+        debug_log(config, "⏰ Existing contact found, updating start time from %ld to %ld (now)", 
+                  startTime, currentTime);
+        startTime = currentTime;
+        endTime = currentTime + (contact->duration * 60);  // Recalculate end time
+    }
+    
     // Add bidirectional contacts as per user requirement (A->B and B->A)
     PsmAddress cxaddr2 = 0;
     int result1 = rfx_insert_contact(regionNbr, startTime, endTime, 
@@ -3006,6 +3029,20 @@ int processCborContactMessage(DtnexConfig *config, unsigned char *nonce, time_t 
     PsmAddress rxaddr1 = 0, rxaddr2 = 0;
     unsigned int owlt = 1;  // 1 second range distance
     int announceRange = 0;  // Don't announce to region
+    
+    // Remove existing ranges first to avoid overlapping time issues
+    time_t removeRangeTime1 = startTime;  // Use current start time for removal
+    time_t removeRangeTime2 = startTime;
+    
+    int rangeRemoveResult1 = rfx_remove_range(&removeRangeTime1,
+                                             (uvast)contact->nodeA, (uvast)contact->nodeB, announceRange);
+    int rangeRemoveResult2 = rfx_remove_range(&removeRangeTime2,
+                                             (uvast)contact->nodeB, (uvast)contact->nodeA, announceRange);
+    
+    debug_log(config, "🗑️ Range removal results %lu↔%lu: %lu→%lu=%d, %lu→%lu=%d", 
+              contact->nodeA, contact->nodeB,
+              contact->nodeA, contact->nodeB, rangeRemoveResult1,
+              contact->nodeB, contact->nodeA, rangeRemoveResult2);
     
     // Add range A->B
     int rangeResult1 = rfx_insert_range(startTime, endTime, 

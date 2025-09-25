@@ -2789,9 +2789,24 @@ int decodeCborMessage(DtnexConfig *config, unsigned char *buffer, int bufferSize
                 // Use the advanced cursor from the test since we already consumed the nodeId
                 extractCursor = testCursor;
                 extractBytesBuffered = testBytesBuffered;
-                if (manualDecodeCborString(extractedMetadata.name, MAX_NODE_NAME_LENGTH - 1, &extractCursor, &extractBytesBuffered) &&
-                    manualDecodeCborString(extractedMetadata.contact, MAX_CONTACT_INFO_LENGTH - 1, &extractCursor, &extractBytesBuffered) &&
-                    manualDecodeCborString(extractedMetadata.location, MAX_LOCATION_LENGTH - 1, &extractCursor, &extractBytesBuffered)) {
+                debug_log(config, "🔍 About to decode name string, bytes left: %u", extractBytesBuffered);
+                int nameResult = manualDecodeCborString(extractedMetadata.name, MAX_NODE_NAME_LENGTH - 1, &extractCursor, &extractBytesBuffered);
+                debug_log(config, "🔍 Name decode result: %d, name='%s', bytes left: %u", nameResult, extractedMetadata.name, extractBytesBuffered);
+                
+                int contactResult = 0, locationResult = 0;
+                if (nameResult) {
+                    debug_log(config, "🔍 About to decode contact string, bytes left: %u", extractBytesBuffered);
+                    contactResult = manualDecodeCborString(extractedMetadata.contact, MAX_CONTACT_INFO_LENGTH - 1, &extractCursor, &extractBytesBuffered);
+                    debug_log(config, "🔍 Contact decode result: %d, contact='%s', bytes left: %u", contactResult, extractedMetadata.contact, extractBytesBuffered);
+                    
+                    if (contactResult) {
+                        debug_log(config, "🔍 About to decode location string, bytes left: %u", extractBytesBuffered);
+                        locationResult = manualDecodeCborString(extractedMetadata.location, MAX_LOCATION_LENGTH - 1, &extractCursor, &extractBytesBuffered);
+                        debug_log(config, "🔍 Location decode result: %d, location='%s', bytes left: %u", locationResult, extractedMetadata.location, extractBytesBuffered);
+                    }
+                }
+                
+                if (nameResult && contactResult && locationResult) {
                     
                     extractedMetadata.nodeId = (unsigned long)testNodeId;
                     extractedMetadata.latitude = 0;  // No GPS data in this format
